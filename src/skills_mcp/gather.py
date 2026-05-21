@@ -517,7 +517,7 @@ def _show_client_setup(dest: Path, auto_results: dict[str, bool], dry_run: bool)
 
 	if "Claude Code" in missing:
 		print("\n  Claude Code:")
-		print(f"    claude mcp add skills -- skills-mcp")
+		print("    claude mcp add skills -- skills-mcp")
 		print(f"    (or: SKILLS_ROOT={dest_str} claude mcp add skills -- skills-mcp)")
 
 	if any(m in {"Claude Desktop", "Cursor", "VS Code / Copilot"} for m in missing):
@@ -539,8 +539,8 @@ def _show_client_setup(dest: Path, auto_results: dict[str, bool], dry_run: bool)
 		print('    command = "skills-mcp"')
 		print(f'    env = {{ SKILLS_ROOT = "{dest_str}" }}')
 
-	print(f"\n  If `skills-mcp` is not on your PATH, use the absolute path")
-	print(f"  (e.g. ~/.local/bin/skills-mcp or wherever uv/pip installed it).")
+	print("\n  If `skills-mcp` is not on your PATH, use the absolute path")
+	print("  (e.g. ~/.local/bin/skills-mcp or wherever uv/pip installed it).")
 	print(f"\n{sep}")
 
 

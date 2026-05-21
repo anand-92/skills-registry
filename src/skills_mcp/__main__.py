@@ -118,20 +118,31 @@ def discover_skills(roots: Iterable[Path], main_file_name: str) -> list[Skill]:
 	return skills
 
 
-def _register_skill_tool(mcp: FastMCP, skill: Skill) -> None:
-	main_path = skill.main_file
-	tool_name = f"skill_{skill.slug}"
+def _register_show_skills_tool(mcp: FastMCP, skills: list[Skill]) -> None:
+	def _show_skills() -> str:
+		if not skills:
+			return "No skills found."
+		root = skills[0].root
+		lines = [
+			f"Load a skill by reading {root}/{{skill-name}}/SKILL.md",
+			"",
+			"Skills:",
+		]
+		for skill in skills:
+			lines.append(skill.slug)
+		return "\n".join(lines)
 
-	def _load_skill() -> str:
-		return main_path.read_text(encoding="utf-8", errors="replace")
-
-	_load_skill.__name__ = tool_name
-	_load_skill.__doc__ = skill.description
+	_show_skills.__name__ = "show_skills"
+	_show_skills.__doc__ = (
+		"List all available skill names. Returns the skills root path and a plain "
+		"list of skill folder names. To use a skill, read its SKILL.md file "
+		"(e.g. ~/my-skills/{skill-name}/SKILL.md)."
+	)
 	mcp.tool(
-		name=tool_name,
-		description=skill.description,
+		name="show_skills",
+		description=_show_skills.__doc__,
 		tags={"skill"},
-	)(_load_skill)
+	)(_show_skills)
 
 
 def build_server() -> FastMCP:
@@ -139,15 +150,14 @@ def build_server() -> FastMCP:
 	roots = _parse_roots(os.environ.get("SKILLS_ROOT", default_root))
 	main_file = os.environ.get("SKILLS_MAIN_FILE_NAME", "SKILL.md").strip() or "SKILL.md"
 	server_name = os.environ.get("SKILLS_SERVER_NAME", "skills").strip() or "skills"
-	expose_tools = _parse_bool("SKILLS_EXPOSE_TOOLS", True)
 	reload = _parse_bool("SKILLS_RELOAD", False)
 
 	mcp = FastMCP(
 		server_name,
 		instructions=(
 			"This server exposes a directory of Markdown skills. "
-			"Each skill is available as a resource (and, by default, a tool); "
-			"invoke a skill tool to load its instructions."
+			"Call the `show_skills` tool to list available skills, then read the "
+			"skill resource (e.g. skill://<slug>/SKILL.md) to load its instructions."
 		),
 	)
 
@@ -161,9 +171,7 @@ def build_server() -> FastMCP:
 	)
 
 	skills = discover_skills(roots, main_file)
-	if expose_tools:
-		for skill in skills:
-			_register_skill_tool(mcp, skill)
+	_register_show_skills_tool(mcp, skills)
 
 	log.info(
 		"Loaded %d skill(s) from %s",

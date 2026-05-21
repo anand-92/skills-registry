@@ -8,7 +8,7 @@
 [![MCP](https://img.shields.io/badge/MCP-compatible-purple.svg)](https://modelcontextprotocol.io)
 [![Built with FastMCP](https://img.shields.io/badge/built%20with-FastMCP-orange.svg)](https://github.com/jlowin/fastmcp)
 
-`skills-mcp` is a tiny [FastMCP](https://github.com/jlowin/fastmcp) server. Drop `SKILL.md` files into a folder and every skill becomes an MCP resource (and, optionally, a tool) that any MCP client can list, read, and invoke. The bundled `skills-mcp gather` CLI consolidates skills you've already accumulated across half a dozen AI tools so they live in exactly one place. No registry, no plugin system, just a folder.
+`skills-mcp` is a tiny [FastMCP](https://github.com/jlowin/fastmcp) server. Drop `SKILL.md` files into a folder and every skill becomes an MCP resource that any MCP client can list and read. A single `show_skills` tool lets the model discover what's available without bloating the system prompt. The bundled `skills-mcp gather` CLI consolidates skills you've already accumulated across half a dozen AI tools so they live in exactly one place. No registry, no plugin system, just a folder.
 
 ---
 
@@ -220,7 +220,6 @@ Every option is an environment variable. All are optional.
 | `SKILLS_ROOT` | `~/my-skills` | One or more directories to scan. Separate multiple paths with the OS path separator (`:` on macOS/Linux, `;` on Windows). The server fails fast if any path is missing. |
 | `SKILLS_MAIN_FILE_NAME` | `SKILL.md` | Filename that marks a skill folder. Every folder containing this file (at any depth under a root) becomes a skill. |
 | `SKILLS_SERVER_NAME` | `skills` | Name advertised to MCP clients. |
-| `SKILLS_EXPOSE_TOOLS` | `true` | Also register each skill as an MCP **tool** named `skill_<slug>`. Set to `false` to expose skills as resources only. |
 | `SKILLS_RELOAD` | `false` | Re-scan skills on every request so edits take effect immediately. Useful during development; adds overhead, so leave off in production. |
 | `SKILLS_LOG_LEVEL` | `INFO` | Server log level (`DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`). |
 
@@ -232,7 +231,7 @@ For a skill folder like `my-skills/translate/` containing `SKILL.md` and `resour
 
 - **Resource** `skill://translate/SKILL.md` — the skill prompt itself.
 - **Resource** `skill://translate/resources/glossary.md` — every sibling file under the skill folder.
-- **Tool** `skill_translate` — returns the contents of `SKILL.md` when invoked, so clients that prefer tools can load the skill directly.
+- **Tool** `show_skills` — returns a markdown list of every available skill with its name, description, slug, and file path. The model calls this once to discover what's available, then reads the relevant `skill://<slug>/SKILL.md` resource to load the full instructions.
 
 The skill's `name` and `description` are taken from the YAML frontmatter at the top of `SKILL.md` when present; otherwise the folder name and the first prose paragraph are used.
 
