@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import logging
 import shutil
 import sys
@@ -384,6 +385,41 @@ def print_plan(plan: Plan, *, out=None) -> None:
 				print(f"      {label}/{folder.name}", file=out)
 
 
+def _print_setup_instructions(dest: Path) -> None:
+	"""Print copy-pasteable MCP client configs after gather completes."""
+	dest_str = str(dest)
+	sep = "─" * 56
+
+	print(f"\n{sep}")
+	print("  Your skills are consolidated. Wire them up in one step:")
+	print(sep)
+
+	print("\n  Claude Code:")
+	print(f"    claude mcp add skills -- skills-mcp")
+	print(f"    (or: SKILLS_ROOT={dest_str} claude mcp add skills -- skills-mcp)")
+
+	print("\n  Claude Desktop / Cursor / VS Code (mcp.json):")
+	config = {
+		"mcpServers": {
+			"skills": {
+				"command": "skills-mcp",
+				"env": {"SKILLS_ROOT": dest_str},
+			}
+		}
+	}
+	for line in json.dumps(config, indent=2).splitlines():
+		print(f"    {line}")
+
+	print("\n  Codex (~/.codex/config.toml):")
+	print("    [mcp_servers.skills]")
+	print(f'    command = "skills-mcp"')
+	print(f'    env = {{ SKILLS_ROOT = "{dest_str}" }}')
+
+	print(f"\n  If `skills-mcp` is not on your PATH, use the absolute path")
+	print(f"  (e.g. ~/.local/bin/skills-mcp or wherever uv/pip installed it).")
+	print(f"\n{sep}")
+
+
 def cmd_gather(args: argparse.Namespace) -> int:
 	"""Top-level driver for ``skills-mcp gather``."""
 	if args.delete_sources and args.keep_sources:
@@ -435,6 +471,7 @@ def cmd_gather(args: argparse.Namespace) -> int:
 
 	if args.dry_run:
 		print("\n(dry run — nothing written, nothing deleted)")
+		_print_setup_instructions(dest)
 		return 0
 
 	if not args.yes and not _ask("\nProceed with copy?", default=True):
@@ -462,7 +499,7 @@ def cmd_gather(args: argparse.Namespace) -> int:
 		n = delete_sources(plan)
 		print(f"✓ Removed {n} source skill folder(s).")
 
-	print(f"\nNext: SKILLS_ROOT={dest} skills-mcp")
+	_print_setup_instructions(dest)
 	return 0
 
 

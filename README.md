@@ -171,7 +171,28 @@ tools and consume context at startup. They've already been copied to the destina
 Delete source folders? [y/N]: y
 ✓ Removed 18 source skill folder(s).
 
-Next: SKILLS_ROOT=/Users/you/my-skills skills-mcp
+────────────────────────────────────────────────────────
+  Your skills are consolidated. Wire them up in one step:
+────────────────────────────────────────────────────────
+
+  Claude Code:
+    claude mcp add skills -- skills-mcp
+
+  Claude Desktop / Cursor / VS Code (mcp.json):
+    {
+      "mcpServers": {
+        "skills": {
+          "command": "skills-mcp",
+          "env": { "SKILLS_ROOT": "/Users/you/my-skills" }
+        }
+      }
+    }
+
+  Codex (~/.codex/config.toml):
+    [mcp_servers.skills]
+    command = "skills-mcp"
+    env = { SKILLS_ROOT = "/Users/you/my-skills" }
+────────────────────────────────────────────────────────
 ```
 
 Useful flags:
