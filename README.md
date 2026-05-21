@@ -1,13 +1,33 @@
 # skills-mcp
 
-> Turn any folder of Markdown skill files into an MCP server that Claude Code, Claude Desktop, Codex, Cursor, and other MCP-compatible clients can use.
+> Your scattered AI skills, one MCP server. Point it at a folder, get tools every MCP client (Claude Code, Claude Desktop, Codex, Cursor, Cline, …) can call. Run `skills-mcp gather` and it pulls every skill from `~/.claude/skills`, `~/.factory/skills`, `~/.cursor/skills`, … into one place — then optionally deletes the originals so they stop auto-loading into context.
 
+[![CI](https://github.com/anand-92/skills-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/anand-92/skills-mcp/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/license-Apache--2.0-green.svg)](LICENSE)
 [![MCP](https://img.shields.io/badge/MCP-compatible-purple.svg)](https://modelcontextprotocol.io)
 [![Built with FastMCP](https://img.shields.io/badge/built%20with-FastMCP-orange.svg)](https://github.com/jlowin/fastmcp)
 
-`skills-mcp` is a tiny [FastMCP](https://github.com/jlowin/fastmcp) server. Point it at a directory of `SKILL.md` files and every skill becomes an MCP resource (and, optionally, a tool) that any MCP client can list, read, and invoke. Add a new file → it shows up automatically. No registry, no plugin system, just a folder.
+`skills-mcp` is a tiny [FastMCP](https://github.com/jlowin/fastmcp) server. Drop `SKILL.md` files into a folder and every skill becomes an MCP resource (and, optionally, a tool) that any MCP client can list, read, and invoke. The bundled `skills-mcp gather` CLI consolidates skills you've already accumulated across half a dozen AI tools so they live in exactly one place. No registry, no plugin system, just a folder.
+
+---
+
+## Why
+
+Every AI tool now ships its own skills folder. You end up with:
+
+```
+~/.claude/skills/code-review/SKILL.md
+~/.factory/skills/code-review/SKILL.md
+~/.codex/skills/code-review/SKILL.md
+~/.cursor/skills/sql-review/SKILL.md
+```
+
+Each one **auto-loads into that tool's context window at startup** — even when you don't need it. And the same skill drifts out of sync across tools. `skills-mcp`:
+
+1. **Consolidates** them with `skills-mcp gather` — copies every skill into one root, dedupes identical content silently, flags real conflicts.
+2. **Serves** them over MCP — so they load *on demand* when the model invokes the tool, not at every startup.
+3. **Lets you delete the originals** — freeing the context the AI tools were spending on skills you weren't using.
 
 ---
 
@@ -73,8 +93,18 @@ uv sync          # or: pip install -e .
 
 ## Quick start
 
+### I already have skills scattered across AI tools
+
 ```bash
-# 1. Put one or more SKILL.md files anywhere on disk
+skills-mcp gather --dry-run     # see the plan
+skills-mcp gather               # copy into ~/my-skills, then asks about deleting originals
+SKILLS_ROOT=~/my-skills skills-mcp     # serve
+```
+
+### I'm starting from scratch
+
+```bash
+# 1. Drop a SKILL.md somewhere
 mkdir -p ~/my-skills/hello && cat > ~/my-skills/hello/SKILL.md <<'EOF'
 ---
 name: hello
@@ -84,13 +114,79 @@ Say hi to the user in a friendly tone.
 EOF
 
 # 2. See what the server will expose
-SKILLS_ROOT=~/my-skills skills-mcp --list
+SKILLS_ROOT=~/my-skills skills-mcp list
 
 # 3. Run the server
 SKILLS_ROOT=~/my-skills skills-mcp
 ```
 
-The server speaks MCP over stdio, so it is normally launched by your MCP client (see snippets below) rather than by hand. Use `--list` whenever you want to debug what is being discovered without booting the full server.
+The server speaks MCP over stdio, so it is normally launched by your MCP client (see snippets below) rather than by hand. Use `skills-mcp list` whenever you want to debug what is being discovered without booting the full server.
+
+## `skills-mcp gather` — consolidate skills you already have
+
+Most people end up with skills duplicated across a handful of tools:
+
+```
+~/.claude/skills/code-review/SKILL.md     (auto-loads into Claude Code's context)
+~/.factory/skills/code-review/SKILL.md    (auto-loads into Factory's context)
+~/.codex/skills/code-review/SKILL.md      (auto-loads into Codex's context)
+~/.cursor/skills/sql-review/SKILL.md      (auto-loads into Cursor's context)
+```
+
+`skills-mcp gather` scans every known AI-tool dot-folder under `$HOME` *and* the current directory, copies every skill into one destination, dedupes by content, and asks if you want to delete the originals so they stop auto-loading.
+
+```text
+$ skills-mcp gather
+Sources scanned:
+  ~/.claude/skills                (/Users/you/.claude/skills)
+  ~/.factory/skills               (/Users/you/.factory/skills)
+  ~/.codex/skills                 (/Users/you/.codex/skills)
+  ~/.cursor/skills                (/Users/you/.cursor/skills)
+
+Destination: /Users/you/my-skills (will create)
+
+Found 18 skill(s) to write; 2 slug conflict(s), 5 dupe(s) skipped.
+
+  [+] code-review              ← ~/.claude/skills/code-review   (kept first; skipped 2 other version(s))
+  [+] commit-msg               ← ~/.claude/skills/commit-msg
+  [+] sql-review               ← ~/.cursor/skills/sql-review
+  ...
+
+Conflicts (different content for the same slug):
+  • code-review  → skip
+      ~/.claude/skills/code-review
+      ~/.factory/skills/code-review
+
+Proceed with copy? [Y/n]: y
+✓ Wrote 18 skill folder(s) to /Users/you/my-skills.
+
+The source folders below can be removed so they no longer auto-load into your AI
+tools and consume context at startup. They've already been copied to the destination.
+  - ~/.claude/skills/code-review
+  - ~/.claude/skills/commit-msg
+  - ...
+
+Delete source folders? [y/N]: y
+✓ Removed 18 source skill folder(s).
+
+Next: SKILLS_ROOT=/Users/you/my-skills skills-mcp
+```
+
+Useful flags:
+
+| Flag | What it does |
+| --- | --- |
+| `--dry-run` | Show the plan and exit. Writes nothing, deletes nothing. |
+| `--dest PATH` | Destination directory (default: `~/my-skills`). |
+| `--source PATH` | Add an extra source directory. Repeatable. |
+| `--on-conflict skip\|newest\|rename` | What to do when two skills have the same slug but different content. Default: `skip` (keep first). |
+| `--symlink` | Symlink each skill folder instead of copying. |
+| `--force` | Overwrite existing destination skill folders. |
+| `--yes` / `-y` | Skip the proceed prompt for copying. Does **not** auto-delete sources. |
+| `--delete-sources` | Delete originals after copying without prompting. |
+| `--keep-sources` | Never prompt to delete sources. |
+
+Sources scanned by default (under both `$HOME` and `.`): `.claude`, `.claude-code`, `.factory`, `.codex`, `.cursor`, `.junie`, `.aider`, `.continue`, `.windsurf`, `.codeium`, `.zed`, `.agent`, `.agents`, `.anthropic`, `.openai`, `.cline`, `.roo`, `.roocode` (each looked up under `.../skills/`).
 
 ## Configuration
 
@@ -206,8 +302,8 @@ Example with a supporting file:
 
 ## Security notes
 
-- The server reads files under `SKILLS_ROOT`. Anything in those folders is visible to the connected MCP client and, through it, to the model. **Do not put secrets, `.env` files, or credentials inside a skills root.**
-- Prefer the default `SKILLS_SUPPORTING_FILES=resources`. The `template` mode inlines file contents into prompts, which is more powerful but also a larger blast radius if you drop the wrong file in.
+- The server reads every file under `SKILLS_ROOT`. Anything in those folders is visible to the connected MCP client and, through it, to the model. **Do not put secrets, `.env` files, or credentials inside a skills root.**
+- `skills-mcp gather` only ever reads from known dot-folders by default. It never writes outside `--dest`. It refuses to use a destination that lives inside any source.
 - `skills-mcp` does not make network calls of its own. Anything network-related lives in the FastMCP transport.
 
 ## Troubleshooting
@@ -215,10 +311,20 @@ Example with a supporting file:
 | Symptom | Fix |
 | --- | --- |
 | `SKILLS_ROOT path(s) not found` at startup | The directory does not exist. Create it, fix the env var, or unset it to use the default `~/my-skills`. |
-| Client says "no skills available" | Make sure each skill folder contains a file literally named `SKILL.md` (check `SKILLS_MAIN_FILE_NAME` if you changed it). Run `skills-mcp --list` to confirm what the server can see. |
+| Client says "no skills available" | Make sure each skill folder contains a file literally named `SKILL.md` (check `SKILLS_MAIN_FILE_NAME` if you changed it). Run `skills-mcp list` to confirm what the server can see. |
 | Edits to a skill are not picked up | Skills are discovered at startup. Restart the MCP client (or the server) after adding or renaming a skill. |
 | `skills-mcp: command not found` | Either install with `uv tool install` and ensure `~/.local/bin` is on your `PATH`, or call it via the absolute path in your MCP client config. |
 | Duplicate slug warnings | Two skill folders normalize to the same slug. Rename one of the folders or set a unique `name:` in its frontmatter. |
+
+## CLI reference
+
+```text
+skills-mcp                 # run the MCP server (default)
+skills-mcp serve           # ditto, explicit
+skills-mcp list            # print discovered skills and exit
+skills-mcp gather [...]    # consolidate skills from known dot-folders
+skills-mcp --version
+```
 
 ## Contributing
 
@@ -227,11 +333,11 @@ PRs welcome. The project is intentionally small.
 ```bash
 git clone https://github.com/anand-92/skills-mcp
 cd skills-mcp
-uv sync
-uv run python -m skills_mcp --version
+uv sync --group dev
+uv run pytest
 ```
 
-Open an issue first if you are planning a non-trivial change.
+Open an issue first if you are planning a non-trivial change. See [CONTRIBUTING.md](CONTRIBUTING.md) and [SECURITY.md](SECURITY.md).
 
 ## License
 

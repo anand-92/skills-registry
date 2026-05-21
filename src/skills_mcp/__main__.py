@@ -34,9 +34,7 @@ def _parse_roots(raw: str) -> list[Path]:
 	roots = [Path(p).expanduser().resolve() for p in parts]
 	missing = [str(p) for p in roots if not p.is_dir()]
 	if missing:
-		raise SystemExit(
-			"SKILLS_ROOT path(s) not found or not a directory: " + ", ".join(missing)
-		)
+		raise SystemExit("SKILLS_ROOT path(s) not found or not a directory: " + ", ".join(missing))
 	return roots
 
 
@@ -201,6 +199,23 @@ def build_server() -> FastMCP:
 	return mcp
 
 
+def _cmd_list() -> int:
+	roots = _parse_roots(os.environ.get("SKILLS_ROOT", str(Path.home() / "my-skills")))
+	main_file = os.environ.get("SKILLS_MAIN_FILE_NAME", "SKILL.md")
+	skills = discover_skills(roots, main_file)
+	if not skills:
+		print("No skills found.", file=sys.stderr)
+		return 1
+	for s in skills:
+		print(f"{s.slug}\t{s.name}\t{s.folder}")
+	return 0
+
+
+def _cmd_serve() -> int:
+	build_server().run()
+	return 0
+
+
 def main(argv: list[str] | None = None) -> int:
 	parser = argparse.ArgumentParser(
 		prog="skills-mcp",
@@ -217,8 +232,24 @@ def main(argv: list[str] | None = None) -> int:
 	parser.add_argument(
 		"--list",
 		action="store_true",
-		help="List discovered skills and exit (does not start the server).",
+		help="List discovered skills and exit (alias for `skills-mcp list`).",
 	)
+
+	subparsers = parser.add_subparsers(dest="command", metavar="<command>")
+	subparsers.add_parser(
+		"serve",
+		help="Run the MCP server (default when no command is given).",
+	)
+	subparsers.add_parser(
+		"list",
+		help="List discovered skills and exit.",
+	)
+
+	# `gather` subcommand is defined in its own module to keep this file small.
+	from .gather import register_subparser as _register_gather
+
+	_register_gather(subparsers)
+
 	args = parser.parse_args(argv)
 
 	logging.basicConfig(
@@ -227,19 +258,15 @@ def main(argv: list[str] | None = None) -> int:
 		stream=sys.stderr,
 	)
 
-	if args.list:
-		roots = _parse_roots(os.environ.get("SKILLS_ROOT", str(Path.home() / "my-skills")))
-		main_file = os.environ.get("SKILLS_MAIN_FILE_NAME", "SKILL.md")
-		skills = discover_skills(roots, main_file)
-		if not skills:
-			print("No skills found.", file=sys.stderr)
-			return 1
-		for s in skills:
-			print(f"{s.slug}\t{s.name}\t{s.folder}")
-		return 0
+	if args.command == "gather":
+		from .gather import cmd_gather
 
-	build_server().run()
-	return 0
+		return cmd_gather(args)
+
+	if args.list or args.command == "list":
+		return _cmd_list()
+
+	return _cmd_serve()
 
 
 if __name__ == "__main__":
