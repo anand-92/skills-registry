@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import logging
-import mimetypes
 import os
 import re
 import sys
@@ -12,7 +11,7 @@ from collections.abc import Iterable
 from pathlib import Path
 
 from fastmcp import FastMCP
-from fastmcp.resources import FileResource
+from fastmcp.server.providers.skills import SkillsDirectoryProvider
 
 from . import __version__
 
@@ -119,55 +118,20 @@ def discover_skills(roots: Iterable[Path], main_file_name: str) -> list[Skill]:
 	return skills
 
 
-def _register_skill(mcp: FastMCP, skill: Skill, scheme: str, expose_tools: bool) -> None:
-	main_uri = f"{scheme}://{skill.slug}/{skill.main_file.name}"
-	mcp.add_resource(
-		FileResource(
-			uri=main_uri,
-			path=skill.main_file,
-			name=skill.name,
-			description=skill.description,
-			mime_type="text/markdown",
-			tags={"skill"},
-		)
-	)
+def _register_skill_tool(mcp: FastMCP, skill: Skill) -> None:
+	main_path = skill.main_file
+	tool_name = f"skill_{skill.slug}"
 
-	# Supporting files: everything else under the skill folder.
-	for path in sorted(skill.folder.rglob("*")):
-		if not path.is_file() or path == skill.main_file:
-			continue
-		rel = path.relative_to(skill.folder).as_posix()
-		uri = f"{scheme}://{skill.slug}/{rel}"
-		mime, _ = mimetypes.guess_type(path.name)
-		is_binary = mime is not None and not (
-			mime.startswith("text/") or mime in {"application/json", "application/xml"}
-		)
-		mcp.add_resource(
-			FileResource(
-				uri=uri,
-				path=path,
-				name=f"{skill.name}:{rel}",
-				description=f"Supporting file for skill {skill.name!r}.",
-				mime_type=mime or "text/plain",
-				is_binary=is_binary,
-				tags={"skill", "skill-resource"},
-			)
-		)
+	def _load_skill() -> str:
+		return main_path.read_text(encoding="utf-8", errors="replace")
 
-	if expose_tools:
-		main_path = skill.main_file
-		tool_name = f"skill_{skill.slug}"
-
-		def _load_skill() -> str:
-			return main_path.read_text(encoding="utf-8", errors="replace")
-
-		_load_skill.__name__ = tool_name
-		_load_skill.__doc__ = skill.description
-		mcp.tool(
-			name=tool_name,
-			description=skill.description,
-			tags={"skill"},
-		)(_load_skill)
+	_load_skill.__name__ = tool_name
+	_load_skill.__doc__ = skill.description
+	mcp.tool(
+		name=tool_name,
+		description=skill.description,
+		tags={"skill"},
+	)(_load_skill)
 
 
 def build_server() -> FastMCP:
@@ -175,8 +139,8 @@ def build_server() -> FastMCP:
 	roots = _parse_roots(os.environ.get("SKILLS_ROOT", default_root))
 	main_file = os.environ.get("SKILLS_MAIN_FILE_NAME", "SKILL.md").strip() or "SKILL.md"
 	server_name = os.environ.get("SKILLS_SERVER_NAME", "skills").strip() or "skills"
-	scheme = os.environ.get("SKILLS_RESOURCE_SCHEME", "skill").strip() or "skill"
 	expose_tools = _parse_bool("SKILLS_EXPOSE_TOOLS", True)
+	reload = _parse_bool("SKILLS_RELOAD", False)
 
 	mcp = FastMCP(
 		server_name,
@@ -187,9 +151,19 @@ def build_server() -> FastMCP:
 		),
 	)
 
+	mcp.add_provider(
+		SkillsDirectoryProvider(
+			roots=roots,
+			main_file_name=main_file,
+			supporting_files="resources",
+			reload=reload,
+		)
+	)
+
 	skills = discover_skills(roots, main_file)
-	for skill in skills:
-		_register_skill(mcp, skill, scheme=scheme, expose_tools=expose_tools)
+	if expose_tools:
+		for skill in skills:
+			_register_skill_tool(mcp, skill)
 
 	log.info(
 		"Loaded %d skill(s) from %s",

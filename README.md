@@ -83,6 +83,8 @@ Requires **Python 3.10+**.
 uv tool install git+https://github.com/anand-92/skills-mcp
 ```
 
+> **After install:** `uv tool install` places `skills-mcp` in `~/.local/bin`. If you get "command not found", open a new terminal or run `rehash` to refresh your shell's command cache. Verify with `which skills-mcp`.
+
 ### From source
 
 ```bash
@@ -197,8 +199,8 @@ Every option is an environment variable. All are optional.
 | `SKILLS_ROOT` | `~/my-skills` | One or more directories to scan. Separate multiple paths with the OS path separator (`:` on macOS/Linux, `;` on Windows). The server fails fast if any path is missing. |
 | `SKILLS_MAIN_FILE_NAME` | `SKILL.md` | Filename that marks a skill folder. Every folder containing this file (at any depth under a root) becomes a skill. |
 | `SKILLS_SERVER_NAME` | `skills` | Name advertised to MCP clients. |
-| `SKILLS_RESOURCE_SCHEME` | `skill` | URI scheme for registered resources, e.g. `skill://<slug>/SKILL.md`. |
 | `SKILLS_EXPOSE_TOOLS` | `true` | Also register each skill as an MCP **tool** named `skill_<slug>`. Set to `false` to expose skills as resources only. |
+| `SKILLS_RELOAD` | `false` | Re-scan skills on every request so edits take effect immediately. Useful during development; adds overhead, so leave off in production. |
 | `SKILLS_LOG_LEVEL` | `INFO` | Server log level (`DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`). |
 
 See [`.env.example`](.env.example) for a copy-pasteable template.
@@ -312,8 +314,8 @@ Example with a supporting file:
 | --- | --- |
 | `SKILLS_ROOT path(s) not found` at startup | The directory does not exist. Create it, fix the env var, or unset it to use the default `~/my-skills`. |
 | Client says "no skills available" | Make sure each skill folder contains a file literally named `SKILL.md` (check `SKILLS_MAIN_FILE_NAME` if you changed it). Run `skills-mcp list` to confirm what the server can see. |
-| Edits to a skill are not picked up | Skills are discovered at startup. Restart the MCP client (or the server) after adding or renaming a skill. |
-| `skills-mcp: command not found` | Either install with `uv tool install` and ensure `~/.local/bin` is on your `PATH`, or call it via the absolute path in your MCP client config. |
+| Edits to a skill are not picked up | Skills are discovered at startup. Restart the MCP client (or the server) after adding or renaming a skill. Or set `SKILLS_RELOAD=true` to re-scan on every request (adds overhead). |
+| `skills-mcp: command not found` | The install succeeded but your shell hasn't picked up the new `PATH`. Open a new terminal, run `rehash`, or run `which skills-mcp` to confirm the path. Alternatively use `~/.local/bin/skills-mcp` directly. |
 | Duplicate slug warnings | Two skill folders normalize to the same slug. Rename one of the folders or set a unique `name:` in its frontmatter. |
 
 ## CLI reference
