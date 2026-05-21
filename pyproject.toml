@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "skills-mcp"
-version = "0.1.0"
+version = "0.2.0"
 description = "MCP server that exposes a directory of Markdown skills to any MCP-compatible client (Claude Code, Claude Desktop, Codex, Cursor, ...)."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -33,6 +33,14 @@ skills-mcp = "skills_mcp.__main__:main"
 Homepage = "https://github.com/anand-92/skills-mcp"
 Repository = "https://github.com/anand-92/skills-mcp"
 Issues = "https://github.com/anand-92/skills-mcp/issues"
+
+[dependency-groups]
+dev = [
+    "pytest>=7",
+    "pytest-cov",
+    "ruff>=0.6",
+    "pre-commit",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/skills_mcp"]
