@@ -13,6 +13,7 @@ import argparse
 import hashlib
 import json
 import logging
+import os
 import shutil
 import sys
 from collections.abc import Callable, Sequence
@@ -385,35 +386,158 @@ def print_plan(plan: Plan, *, out=None) -> None:
 				print(f"      {label}/{folder.name}", file=out)
 
 
-def _print_setup_instructions(dest: Path) -> None:
-	"""Print copy-pasteable MCP client configs after gather completes."""
+def _claude_desktop_config_path() -> Path | None:
+	"""Return the Claude Desktop MCP config path for the current platform."""
+	system = sys.platform
+	if system == "darwin":
+		return Path.home() / "Library" / "Application Support" / "Claude" / "claude_desktop_config.json"
+	if system == "win32":
+		appdata = os.environ.get("APPDATA")
+		if appdata:
+			return Path(appdata) / "Claude" / "claude_desktop_config.json"
+		return None
+	# Linux and others
+	return Path.home() / ".config" / "Claude" / "claude_desktop_config.json"
+
+
+def _update_json_config(path: Path, dest_str: str) -> bool:
+	"""Add or update the ``skills`` server entry in an MCP JSON config file."""
+	data: dict = {}
+	if path.exists():
+		try:
+			text = path.read_text(encoding="utf-8").strip()
+			if text:
+				data = json.loads(text)
+		except json.JSONDecodeError:
+			return False
+	data.setdefault("mcpServers", {})
+	data["mcpServers"]["skills"] = {
+		"command": "skills-mcp",
+		"env": {"SKILLS_ROOT": dest_str},
+	}
+	path.parent.mkdir(parents=True, exist_ok=True)
+	path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+	return True
+
+
+def _update_toml_config(path: Path, dest_str: str) -> bool:
+	"""Add or update the ``[mcp_servers.skills]`` section in a TOML file."""
+	lines: list[str] = []
+	if path.exists():
+		lines = path.read_text(encoding="utf-8").splitlines()
+
+	# Strip existing [mcp_servers.skills] section and everything until the next
+	# top-level section.
+	new_lines: list[str] = []
+	skip = False
+	for line in lines:
+		stripped = line.strip()
+		if stripped == "[mcp_servers.skills]":
+			skip = True
+			continue
+		if skip and stripped.startswith("["):
+			skip = False
+		if not skip:
+			new_lines.append(line)
+
+	# Append new section at the end.
+	new_lines.append("")
+	new_lines.append("[mcp_servers.skills]")
+	new_lines.append('command = "skills-mcp"')
+	new_lines.append(f'env = {{ SKILLS_ROOT = "{dest_str}" }}')
+	new_lines.append("")
+
+	path.parent.mkdir(parents=True, exist_ok=True)
+	path.write_text("\n".join(new_lines) + "\n", encoding="utf-8")
+	return True
+
+
+def _auto_configure_clients(dest: Path, dry_run: bool) -> dict[str, bool]:
+	"""Attempt to update known MCP client configs with the destination path.
+
+	Returns a mapping ``client_label -> updated`` where ``updated`` is True
+	when the config file was found and successfully written.
+	"""
+	dest_str = str(dest)
+	results: dict[str, bool] = {}
+
+	candidates: list[tuple[str, Path | None, Callable[[Path, str], bool]]] = [
+		("Claude Code", Path.home() / ".claude" / "mcp.json", _update_json_config),
+		("Claude Desktop", _claude_desktop_config_path(), _update_json_config),
+		("Cursor", Path.home() / ".cursor" / "mcp.json", _update_json_config),
+		("VS Code / Copilot", Path.home() / ".copilot" / "mcp.json", _update_json_config),
+		("Codex", Path.home() / ".codex" / "config.toml", _update_toml_config),
+	]
+
+	for label, path, updater in candidates:
+		if path is None:
+			results[label] = False
+			continue
+		if not path.exists() and dry_run:
+			results[label] = False
+			continue
+		if path.exists():
+			if dry_run:
+				# In dry-run we report it as "would update" but don't write.
+				results[label] = True
+			else:
+				try:
+					results[label] = updater(path, dest_str)
+				except OSError:
+					results[label] = False
+		else:
+			results[label] = False
+
+	return results
+
+
+def _show_client_setup(dest: Path, auto_results: dict[str, bool], dry_run: bool) -> None:
+	"""Print a summary of auto-configured clients and manual snippets for the rest."""
 	dest_str = str(dest)
 	sep = "─" * 56
+	verb = "would update" if dry_run else "updated"
+
+	updated = [label for label, ok in auto_results.items() if ok]
+	missing = [label for label, ok in auto_results.items() if not ok]
+
+	if updated:
+		print(f"\n{sep}")
+		print(f"  ✓ {verb.capitalize()} {len(updated)} MCP client config(s):")
+		for label in updated:
+			print(f"    • {label}")
+		print(sep)
+
+	if not missing:
+		print("\n  All known MCP clients are configured. Restart them to pick up the change.")
+		return
 
 	print(f"\n{sep}")
-	print("  Your skills are consolidated. Wire them up in one step:")
+	print("  Copy-paste the snippets below for clients that need manual setup:")
 	print(sep)
 
-	print("\n  Claude Code:")
-	print(f"    claude mcp add skills -- skills-mcp")
-	print(f"    (or: SKILLS_ROOT={dest_str} claude mcp add skills -- skills-mcp)")
+	if "Claude Code" in missing:
+		print("\n  Claude Code:")
+		print(f"    claude mcp add skills -- skills-mcp")
+		print(f"    (or: SKILLS_ROOT={dest_str} claude mcp add skills -- skills-mcp)")
 
-	print("\n  Claude Desktop / Cursor / VS Code (mcp.json):")
-	config = {
-		"mcpServers": {
-			"skills": {
-				"command": "skills-mcp",
-				"env": {"SKILLS_ROOT": dest_str},
+	if any(m in {"Claude Desktop", "Cursor", "VS Code / Copilot"} for m in missing):
+		print("\n  Claude Desktop / Cursor / VS Code (mcp.json):")
+		config = {
+			"mcpServers": {
+				"skills": {
+					"command": "skills-mcp",
+					"env": {"SKILLS_ROOT": dest_str},
+				}
 			}
 		}
-	}
-	for line in json.dumps(config, indent=2).splitlines():
-		print(f"    {line}")
+		for line in json.dumps(config, indent=2).splitlines():
+			print(f"    {line}")
 
-	print("\n  Codex (~/.codex/config.toml):")
-	print("    [mcp_servers.skills]")
-	print(f'    command = "skills-mcp"')
-	print(f'    env = {{ SKILLS_ROOT = "{dest_str}" }}')
+	if "Codex" in missing:
+		print("\n  Codex (~/.codex/config.toml):")
+		print("    [mcp_servers.skills]")
+		print('    command = "skills-mcp"')
+		print(f'    env = {{ SKILLS_ROOT = "{dest_str}" }}')
 
 	print(f"\n  If `skills-mcp` is not on your PATH, use the absolute path")
 	print(f"  (e.g. ~/.local/bin/skills-mcp or wherever uv/pip installed it).")
@@ -471,7 +595,8 @@ def cmd_gather(args: argparse.Namespace) -> int:
 
 	if args.dry_run:
 		print("\n(dry run — nothing written, nothing deleted)")
-		_print_setup_instructions(dest)
+		auto_results = _auto_configure_clients(dest, dry_run=True)
+		_show_client_setup(dest, auto_results, dry_run=True)
 		return 0
 
 	if not args.yes and not _ask("\nProceed with copy?", default=True):
@@ -499,7 +624,8 @@ def cmd_gather(args: argparse.Namespace) -> int:
 		n = delete_sources(plan)
 		print(f"✓ Removed {n} source skill folder(s).")
 
-	_print_setup_instructions(dest)
+	auto_results = _auto_configure_clients(dest, dry_run=False)
+	_show_client_setup(dest, auto_results, dry_run=False)
 	return 0
 
 
