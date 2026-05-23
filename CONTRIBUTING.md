@@ -80,7 +80,7 @@ Go's naming conventions are part of the language culture and are enforced by
 | Acronyms | preserve case (`URL`, `SHA`, `MCP`, `ID`) | `repoURL`, `treeSHA`, `mcpServer` |
 | Error variables | `Err`-prefix, `PascalCase` | `ErrNotFound`, `ErrConflict` |
 | Receivers | 1–2 letter abbreviation of the type | `func (c *Client) Get(...)`, `func (m model) Update(...)` |
-| Constants | `PascalCase` (or `UPPER_CASE` only when mirroring an env var) | `DefaultBranch`, `MaxRetries` |
+| Constants | Follows visibility rules (PascalCase / camelCase) | DefaultBranch, stateLoading |
 
 Run `gofmt -l .` from `cli/` — output must be empty. Run `go vet ./...`
 to catch shadowed identifiers and other naming-adjacent issues.
