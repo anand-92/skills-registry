@@ -37,16 +37,64 @@ func runGet(ctx context.Context, slug, dest string) error {
 	if err != nil {
 		return err
 	}
-	if dest == "" {
-		cwd, _ := os.Getwd()
-		dest = filepath.Join(cwd, ".agents", "skills", scan.Slugify(slug))
+	cwd, _ := os.Getwd()
+	finalDest, reused := resolveDest(slug, dest, cwd)
+	if reused != "" {
+		fmt.Println(tui.HintStyle.Render("!"), "reusing existing folder", reused)
 	}
-	if err := os.MkdirAll(dest, 0o755); err != nil {
+	if err := os.MkdirAll(finalDest, 0o755); err != nil {
 		return err
 	}
-	if err := client.Get(ctx, scan.Slugify(slug), dest); err != nil {
+	if err := client.Get(ctx, scan.Slugify(slug), finalDest); err != nil {
 		return err
 	}
-	fmt.Println(tui.OkStyle.Render("✓"), "wrote skill to", dest)
+	fmt.Println(tui.OkStyle.Render("✓"), "wrote skill to", finalDest)
 	return nil
+}
+
+// resolveDest decides where to write a fetched skill so that the on-disk folder
+// name stays in lockstep with the registry's canonical slug.
+//
+// Rules:
+//  1. Empty destFlag → "<cwd>/.agents/skills/<canonSlug>".
+//  2. destFlag with a basename that slugifies to canonSlug → use as-is.
+//  3. Otherwise destFlag is treated as a parent directory and canonSlug is appended.
+//
+// After resolving, the parent directory is scanned for an existing sibling
+// folder whose Slugify matches canonSlug. If one is found at a different path,
+// that path is returned instead (the second return value is the path that's
+// being reused, for user-facing logging). This prevents the
+// "agp-9-upgrade vs agp_9_upgrade" duplicate-folder bug.
+func resolveDest(slug, destFlag, cwd string) (finalDest, reused string) {
+	canonSlug := scan.Slugify(slug)
+	switch {
+	case destFlag == "":
+		finalDest = filepath.Join(cwd, ".agents", "skills", canonSlug)
+	case scan.Slugify(filepath.Base(destFlag)) == canonSlug:
+		finalDest = destFlag
+	default:
+		finalDest = filepath.Join(destFlag, canonSlug)
+	}
+	if sibling, ok := findSlugSibling(filepath.Dir(finalDest), canonSlug); ok && sibling != finalDest {
+		return sibling, sibling
+	}
+	return finalDest, ""
+}
+
+// findSlugSibling returns the path of an existing directory under parent whose
+// name slugifies to canonSlug, if one exists.
+func findSlugSibling(parent, canonSlug string) (string, bool) {
+	entries, err := os.ReadDir(parent)
+	if err != nil {
+		return "", false
+	}
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		if scan.Slugify(e.Name()) == canonSlug {
+			return filepath.Join(parent, e.Name()), true
+		}
+	}
+	return "", false
 }
