@@ -90,6 +90,30 @@ When you introduce a new construct that doesn't fit the table above, either
 extend the linter configuration and update this table in the same PR, or
 follow the nearest analogous rule.
 
+### Project brand vs literal identifiers
+
+The project's brand name — PyPI package, GitHub repo, README title, prose
+references — is the plural form: **`skills-registry`**. Use that spelling
+in any prose that talks about the project as a whole (docs, comments,
+website copy, log messages, error text addressed to humans).
+
+The following are spelled singular (`skill-registry`) for historical
+reasons; renaming them would break every existing install:
+
+| Token | Where it lives |
+|---|---|
+| `skill-registry` (Go binary) | `cli/cmd/skill-registry/`, `~/.local/bin/skill-registry`, release tarballs |
+| `skill-registry-mcp` | Python console script in `pyproject.toml`, desktop MCP client configs |
+| `"skill-registry"` MCP server name | Registered in `registry_server.py:build_server` |
+| `[mcp_servers.skill-registry]` / `"skill-registry": {…}` | The config key users paste into Codex / Claude / Cursor / VS Code |
+| `<dot-dir>/skills/skill-registry/SKILL.md` | Install path written by Go bootstrap |
+| `skill-registry_<os>_<arch>` | Release artifact naming |
+
+Keep these tokens singular whenever you quote them verbatim. New code
+or docs must not introduce *new* singular spellings for project-brand
+contexts. In one line: **brand = plural; literal token a user types or
+pastes = singular**.
+
 ## Pre-commit
 
 Install the git hooks so you catch issues before pushing:

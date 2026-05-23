@@ -28,8 +28,8 @@ export default function Home() {
     <>
       <header className="topnav" data-od-id="topnav">
     <div className="container topnav-inner">
-      <a href="#" className="brand-mark" aria-label="skill-registry">
-        <img src="assets/logo.png" alt="skill-registry" />
+      <a href="#" className="brand-mark" aria-label="skills-registry">
+        <img src="assets/logo.png" alt="skills-registry" />
       </a>
       <nav>
         <a href="#how-it-works">How it works</a>
@@ -567,8 +567,8 @@ export default function Home() {
     <div className="container">
       <div className="foot-grid">
         <div className="foot-col">
-          <a href="#" className="brand-mark foot" aria-label="skill-registry">
-            <img src="assets/logo.png" alt="skill-registry" />
+          <a href="#" className="brand-mark foot" aria-label="skills-registry">
+            <img src="assets/logo.png" alt="skills-registry" />
           </a>
           <p className="foot-tag">One GitHub repo, every AI agent. Skills fetched on demand — not auto-loaded into every startup context.</p>
         </div>
