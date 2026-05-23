@@ -48,6 +48,7 @@ def build_server() -> FastMCP:
 			"Call `list_skills` to discover, `get_skill(slug=...)` to download, "
 			"`publish_skill(...)` to upload."
 		),
+		version=__version__,
 	)
 	_register_tools(server, client, config.repo)
 	log.info("Registry MCP server bound to %s (branch %s)", config.repo, config.default_branch)
@@ -63,6 +64,7 @@ def _register_tools(server: FastMCP, client: RegistryClient, repo: str) -> None:
 			"the skill via `get_skill`."
 		),
 		tags={"skills", "registry"},
+		annotations={"readOnlyHint": True, "openWorldHint": True},
 	)
 	def list_skills() -> str:
 		summaries = client.list_skills()
@@ -94,6 +96,7 @@ def _register_tools(server: FastMCP, client: RegistryClient, repo: str) -> None:
 			"Read every file in the returned folder before using the skill."
 		),
 		tags={"skills", "registry"},
+		annotations={"readOnlyHint": True, "openWorldHint": True},
 	)
 	def get_skill(slug: str) -> str:
 		normalized = slugify(slug)
@@ -119,12 +122,24 @@ def _register_tools(server: FastMCP, client: RegistryClient, repo: str) -> None:
 			"`SKILL.md`). Returns the new commit SHA on success."
 		),
 		tags={"skills", "registry"},
+		annotations={"destructiveHint": True, "openWorldHint": True},
 	)
 	def publish_skill(
 		name: str,
 		files: dict[str, str] | None = None,
 		local_folder: str | None = None,
 	) -> str:
+		"""Publish a skill to the registry.
+
+		Args:
+			name: Display name of the skill; the registry slug is derived
+				from this via the same slugify rules used for discovery.
+			files: Mapping of path-relative-to-skill-folder → text content
+				(e.g. ``{"SKILL.md": "...", "resources/a.md": "..."}``).
+				Mutually exclusive with ``local_folder``.
+			local_folder: Absolute path to a folder containing ``SKILL.md``
+				and any supporting files. Mutually exclusive with ``files``.
+		"""
 		if (files is None) == (local_folder is None):
 			raise ValueError("Pass exactly one of `files` or `local_folder`.")
 		slug = slugify(name)

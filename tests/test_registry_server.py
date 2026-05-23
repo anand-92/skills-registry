@@ -7,9 +7,12 @@ config or auth is missing.
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
+from fastmcp import FastMCP
 
 from skills_mcp import registry_server
 from skills_mcp.config import ConfigError
@@ -78,3 +81,28 @@ def test_main_exits_with_config_error_code(
 	assert rc == 2
 	captured = capsys.readouterr()
 	assert "No registry configured" in captured.err
+
+
+def test_register_tools_exposes_three_tools_with_correct_metadata() -> None:
+	"""Direct ``_register_tools`` smoke check — no gh/config plumbing."""
+	server = FastMCP("test")
+	fake_client = SimpleNamespace(
+		list_skills=lambda: [],
+		get_folder_sha=lambda slug: None,
+		download_skill=lambda slug, dest: dest,
+		publish_skill=lambda slug, payload: "deadbeef",
+	)
+	registry_server._register_tools(server, fake_client, "fake/repo")
+
+	tools = {t.name: t for t in asyncio.run(server.list_tools())}
+	assert set(tools) == {"list_skills", "get_skill", "publish_skill"}
+
+	# Safety hints (the only annotations clients gate on).
+	assert tools["list_skills"].annotations.readOnlyHint is True
+	assert tools["get_skill"].annotations.readOnlyHint is True
+	assert tools["publish_skill"].annotations.destructiveHint is True
+
+	# ``Args:`` docstring on publish_skill propagates to per-param descriptions.
+	publish_props = tools["publish_skill"].parameters["properties"]
+	assert publish_props["files"]["description"]
+	assert publish_props["local_folder"]["description"]

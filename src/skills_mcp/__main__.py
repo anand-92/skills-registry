@@ -125,33 +125,6 @@ def discover_skills(roots: Iterable[Path], main_file_name: str) -> list[Skill]:
 	return skills
 
 
-def _register_show_skills_tool(mcp: FastMCP, skills: list[Skill]) -> None:
-	def _show_skills() -> str:
-		if not skills:
-			return "No skills found."
-		root = skills[0].root
-		lines = [
-			f"Load a skill by reading {root}/{{skill-name}}/SKILL.md",
-			"",
-			"Skills:",
-		]
-		for skill in skills:
-			lines.append(skill.slug)
-		return "\n".join(lines)
-
-	_show_skills.__name__ = "show_skills"
-	_show_skills.__doc__ = (
-		"List all available skill names. Returns the skills root path and a plain "
-		"list of skill folder names. To use a skill, read its SKILL.md file "
-		"(e.g. ~/my-skills/{skill-name}/SKILL.md)."
-	)
-	mcp.tool(
-		name="show_skills",
-		description=_show_skills.__doc__,
-		tags={"skill"},
-	)(_show_skills)
-
-
 def build_server() -> FastMCP:
 	default_root = str(Path.home() / "my-skills")
 	roots = _parse_roots(os.environ.get("SKILLS_ROOT", default_root))
@@ -166,6 +139,7 @@ def build_server() -> FastMCP:
 			"Call the `show_skills` tool to list available skills, then read the "
 			"skill resource (e.g. skill://<slug>/SKILL.md) to load its instructions."
 		),
+		version=__version__,
 	)
 
 	mcp.add_provider(
@@ -177,12 +151,34 @@ def build_server() -> FastMCP:
 		)
 	)
 
-	skills = discover_skills(roots, main_file)
-	_register_show_skills_tool(mcp, skills)
+	initial_skills = discover_skills(roots, main_file)
+
+	@mcp.tool(
+		tags={"skill"},
+		annotations={"readOnlyHint": True, "openWorldHint": False},
+	)
+	def show_skills() -> str:
+		"""List all available skill names.
+
+		Returns the skills root path and a plain list of skill folder names.
+		To use a skill, read its SKILL.md file (e.g.
+		``~/my-skills/{slug}/SKILL.md``).
+		"""
+		skills = discover_skills(roots, main_file) if reload else initial_skills
+		if not skills:
+			return "No skills found."
+		root = skills[0].root
+		lines = [
+			f"Load a skill by reading {root}/{{skill-name}}/SKILL.md",
+			"",
+			"Skills:",
+		]
+		lines.extend(s.slug for s in skills)
+		return "\n".join(lines)
 
 	log.info(
 		"Loaded %d skill(s) from %s",
-		len(skills),
+		len(initial_skills),
 		", ".join(str(r) for r in roots),
 	)
 	return mcp

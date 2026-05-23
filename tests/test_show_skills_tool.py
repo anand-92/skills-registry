@@ -86,3 +86,31 @@ def test_no_per_skill_tools_registered(
 	names = [t.name for t in tools]
 	assert "skill_code_review" not in names
 	assert "show_skills" in names
+
+
+@pytest.mark.parametrize("reload", [True, False])
+def test_show_skills_reload_behavior(
+	tmp_path: Path,
+	monkeypatch: pytest.MonkeyPatch,
+	make_skill: Any,
+	reload: bool,
+) -> None:
+	"""With reload on, skills added after build appear; with reload off, they don't."""
+	make_skill(tmp_path, "alpha", body="Alpha body.", frontmatter={"name": "Alpha"})
+	monkeypatch.setenv("SKILLS_ROOT", str(tmp_path))
+	monkeypatch.setenv("SKILLS_RELOAD", "true" if reload else "false")
+
+	mcp = build_server()
+	# Warm call (also confirms initial state).
+	asyncio.run(mcp.call_tool("show_skills", {}))
+
+	# Add a new skill after the server is built.
+	make_skill(tmp_path, "bravo", body="Bravo body.", frontmatter={"name": "Bravo"})
+
+	result = asyncio.run(mcp.call_tool("show_skills", {}))
+	text = "".join(item.text if hasattr(item, "text") else str(item) for item in result)
+
+	# Original skill is always present.
+	assert "alpha" in text
+	# New skill is visible only when reload is enabled.
+	assert ("bravo" in text) is reload
