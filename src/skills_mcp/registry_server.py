@@ -82,8 +82,9 @@ def _register_tools(server: FastMCP, client: RegistryClient, repo: str) -> None:
 			rows.append(f"| `{s.slug}` | {s.name} | {desc} |")
 		footer = (
 			'\n\nUse `get_skill(slug="<slug>")` to download a skill. The tool '
-			"returns an absolute local path; read every file in that folder "
-			"before acting on the skill."
+			"returns an absolute local path; read the `SKILL.md` at the root "
+			"of that folder — it directs you to any supporting files "
+			"(scripts, assets, resources) you actually need."
 		)
 		return header + "\n".join(rows) + footer
 
@@ -92,8 +93,10 @@ def _register_tools(server: FastMCP, client: RegistryClient, repo: str) -> None:
 		description=(
 			"Download a single skill from the registry into a local cache "
 			"folder and return the absolute path. The folder contains "
-			"`SKILL.md` plus any supporting files (e.g. `resources/`). "
-			"Read every file in the returned folder before using the skill."
+			"`SKILL.md` plus any supporting files (e.g. `scripts/`, "
+			"`assets/`, `resources/`). Read `SKILL.md` at the root of the "
+			"returned folder — it tells you which supporting files to load "
+			"and when."
 		),
 		tags={"skills", "registry"},
 		annotations={"readOnlyHint": True, "openWorldHint": True},

@@ -23,7 +23,8 @@ description: |
 
 Skills live at https://github.com/%s and are fetched on demand by shelling
 out to the ` + "`skill-registry`" + ` binary. **Do not assume any skill is already
-loaded** — always discover, then fetch, then read every file before acting.
+loaded** — always discover, fetch, then read the skill's ` + "`SKILL.md`" + `; it
+tells you what else to load and when.
 
 Requires the ` + "`gh`" + ` CLI to be authenticated (` + "`gh auth status`" + `). All registry
 I/O routes through ` + "`gh api`" + `; no ` + "`git`" + ` or SSH is needed.
@@ -44,9 +45,10 @@ skill-registry get <slug> [--dest PATH]
 ` + "```" + `
 
 Prints the absolute path to a local folder containing the skill's
-` + "`SKILL.md`" + ` and every supporting file. **Read every file in that folder**
-before acting on the skill. Cached at ` + "`~/.cache/skills-mcp/skills/<slug>/`" + `
-and refreshed automatically when the upstream tree changes.
+` + "`SKILL.md`" + ` plus any supporting files (` + "`scripts/`" + `, ` + "`assets/`" + `, ` + "`resources/`" + `, …).
+**Read the ` + "`SKILL.md`" + ` at the root first** — it tells you which supporting
+files to load and when. Cached at ` + "`~/.cache/skills-mcp/skills/<slug>/`" + ` and
+refreshed automatically when the upstream tree changes.
 
 ## 3. Publish a new or updated skill
 
