@@ -49,7 +49,7 @@ cli/                     # Separate Go module (own go.mod)
     bootstrap/           # SkillMd renderer + InstallSkillMd + MCP/Codex JSON/TOML snippet builders
     config/              # Go mirror of Python config.py (TOML round-trip)
     registry/            # Go mirror of registry_api.py (gh-api client, atomic Publish, conflict retry)
-    scan/                # Dot-folder discovery + frontmatter parsing (Go port of discover_skills)
+    scan/                # Dot-folder discovery + frontmatter parsing
     tui/                 # Bubble Tea models: list, multi-select, input, choice
 
 tests/                   # 139 Python tests (pytest)

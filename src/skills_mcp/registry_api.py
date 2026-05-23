@@ -108,7 +108,8 @@ class RegistryClient:
 	def download_skill(self, slug: str, dest: Path) -> Path:
 		"""Recursively copy ``<slug>/`` from the registry into ``dest``.
 
-		``dest`` is treated as the target skill folder (e.g. ``…/my-skills/foo``).
+		``dest`` is treated as the target skill folder (e.g. the cache path
+		``~/.cache/skills-mcp/skills/foo``).
 		Returns the resolved destination path. Existing files at ``dest`` are
 		overwritten.
 		"""

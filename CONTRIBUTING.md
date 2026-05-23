@@ -1,6 +1,6 @@
 # Contributing to skills-mcp
 
-Thanks for your interest! `skills-mcp` is intentionally small: a folder of `SKILL.md` files exposed over MCP. We want to keep it that way. Bug fixes, docs, and small focused features are very welcome. For anything larger, **please open an issue first** so we can agree on scope before you write code.
+Thanks for your interest! `skills-mcp` is intentionally small: a GitHub-backed skill registry exposed over MCP, plus the Go CLI and bootstrap that wire it up. We want to keep it that way. Bug fixes, docs, and small focused features are very welcome. For anything larger, **please open an issue first** so we can agree on scope before you write code.
 
 ## Ethos
 
@@ -76,9 +76,9 @@ Use the **Bug report** issue template. Please include:
 
 - `skills-mcp --version`
 - Your MCP client and its version
-- OS and Python version
-- The value of `SKILLS_ROOT`
-- A minimal reproduction (a tiny `SKILL.md` is usually enough)
+- OS, Python version (and Go version if the CLI is involved)
+- The registry repo (`owner/repo`) if relevant
+- A minimal reproduction (commands run, expected vs actual output)
 
 ## Security issues
 

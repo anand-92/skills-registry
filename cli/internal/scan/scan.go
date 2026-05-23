@@ -1,5 +1,5 @@
 // Package scan finds local skills inside every known AI tool dot-folder.
-// Port of src/skills_mcp/__main__.py's `discover_skills` + the source-dir
+// Local skill discovery + the source-dir
 // enumeration that used to live in gather.py.
 package scan
 
