@@ -7,38 +7,49 @@ import (
 	"testing"
 
 	"github.com/anand-92/skills-registry/cli/internal/config"
+	"github.com/anand-92/skills-registry/cli/internal/jsonout"
 )
 
 // TestBareRouteDecision exercises the pure routing matrix from runRoot.
-// Each row corresponds to one assertion from the F1.3 spec:
+// Each row corresponds to one assertion from the F1.3 / F1.4 spec:
 //
-//	(a) ErrMissing  + TTY     → wizard
-//	(b) nil         + TTY     → hub
-//	(c) anything    + non-TTY → help
+//	(a) ErrMissing  + TTY + !json → wizard
+//	(b) nil         + TTY + !json → hub
+//	(c) anything    + non-TTY     → help
+//	(d) anything    + TTY  + json → help (F1.4: --json suppresses TUI)
 //
-// Plus the malformed-config passthrough (anything else → caller surfaces
-// the error).
+// Plus the malformed-config passthrough (TTY + non-missing load error
+// + !json → caller surfaces the error).
 func TestBareRouteDecision(t *testing.T) {
 	otherErr := errors.New("broken registry.toml")
 	cases := []struct {
-		name    string
-		isTTY   bool
-		loadErr error
-		want    bareRoute
+		name     string
+		isTTY    bool
+		jsonMode bool
+		loadErr  error
+		want     bareRoute
 	}{
-		{"non-tty + no config error", false, nil, bareRouteHelp},
-		{"non-tty + missing config", false, config.ErrMissing, bareRouteHelp},
-		{"non-tty + load error", false, otherErr, bareRouteHelp},
-		{"tty + missing config goes to wizard", true, config.ErrMissing, bareRouteWizard},
-		{"tty + config loaded goes to hub", true, nil, bareRouteHub},
-		{"tty + non-missing load error surfaces", true, otherErr, bareRouteError},
+		{"non-tty + no config error", false, false, nil, bareRouteHelp},
+		{"non-tty + missing config", false, false, config.ErrMissing, bareRouteHelp},
+		{"non-tty + load error", false, false, otherErr, bareRouteHelp},
+		{"tty + missing config goes to wizard", true, false, config.ErrMissing, bareRouteWizard},
+		{"tty + config loaded goes to hub", true, false, nil, bareRouteHub},
+		{"tty + non-missing load error surfaces", true, false, otherErr, bareRouteError},
+		// F1.4: --json forces help regardless of config state when it
+		// would otherwise launch a TUI (wizard or hub).
+		{"tty + json + missing config", true, true, config.ErrMissing, bareRouteHelp},
+		{"tty + json + config loaded", true, true, nil, bareRouteHelp},
+		{"tty + json + load error", true, true, otherErr, bareRouteHelp},
+		// --json on a non-TTY environment must not regress the non-TTY
+		// short-circuit either.
+		{"non-tty + json + missing config", false, true, config.ErrMissing, bareRouteHelp},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := bareRouteDecision(tc.isTTY, tc.loadErr)
+			got := bareRouteDecision(tc.isTTY, tc.jsonMode, tc.loadErr)
 			if got != tc.want {
-				t.Fatalf("bareRouteDecision(%v, %v) = %v, want %v",
-					tc.isTTY, tc.loadErr, got, tc.want)
+				t.Fatalf("bareRouteDecision(%v, %v, %v) = %v, want %v",
+					tc.isTTY, tc.jsonMode, tc.loadErr, got, tc.want)
 			}
 		})
 	}
@@ -49,9 +60,50 @@ func TestBareRouteDecision(t *testing.T) {
 // runRoot relies on errors.Is, not equality.
 func TestBareRouteDecisionWrappedErrMissing(t *testing.T) {
 	wrapped := errors.Join(errors.New("read config"), config.ErrMissing)
-	got := bareRouteDecision(true, wrapped)
+	got := bareRouteDecision(true, false, wrapped)
 	if got != bareRouteWizard {
 		t.Fatalf("wrapped ErrMissing routed to %v, want bareRouteWizard", got)
+	}
+}
+
+// TestRootCmdRegistersJSONFlag verifies F1.4's central wiring: the
+// persistent --json flag must be registered on the root cobra command
+// so cobra propagates it to every subcommand at parse time. Without
+// this, `skill-registry list --json` would fail with "unknown flag".
+func TestRootCmdRegistersJSONFlag(t *testing.T) {
+	root := newRootCmd()
+	f := root.PersistentFlags().Lookup(jsonout.FlagName)
+	if f == nil {
+		t.Fatalf("root command is missing persistent flag --%s", jsonout.FlagName)
+	}
+	if f.DefValue != "false" {
+		t.Fatalf("default value for --%s = %q, want \"false\"", jsonout.FlagName, f.DefValue)
+	}
+}
+
+// TestRootJSONFlagPropagatesToSubcommands is the higher-level
+// integration check: cobra must parse --json on a subcommand
+// invocation and flip jsonout.Enabled() to true before the subcommand
+// runs. This is the contract every subcommand will rely on in F4.2.
+func TestRootJSONFlagPropagatesToSubcommands(t *testing.T) {
+	prev := jsonout.Enabled()
+	t.Cleanup(func() { jsonout.SetEnabled(prev) })
+	jsonout.SetEnabled(false)
+
+	root := newRootCmd()
+	// Use --help on a subcommand so RunE doesn't actually execute the
+	// real command body (which would touch the user's filesystem). We
+	// only care that cobra parses --json into the shared package
+	// variable as part of resolving the subcommand.
+	root.SetArgs([]string{"list", "--json", "--help"})
+	var stdout, stderr bytes.Buffer
+	root.SetOut(&stdout)
+	root.SetErr(&stderr)
+	if err := root.Execute(); err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if !jsonout.Enabled() {
+		t.Fatal("jsonout.Enabled() returned false after `list --json` invocation")
 	}
 }
 

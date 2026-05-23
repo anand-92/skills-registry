@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/anand-92/skills-registry/cli/internal/config"
+	"github.com/anand-92/skills-registry/cli/internal/jsonout"
 )
 
 var version = "dev"
@@ -55,6 +56,11 @@ Day-to-day, use:
 		RunE:    runRoot,
 	}
 
+	// Bind the persistent --json flag on the root so every subcommand
+	// inherits it. Subcommands honor it via jsonout.Enabled() and emit
+	// structured output instead of TUI/interactive prompts.
+	jsonout.BindFlag(root)
+
 	root.AddCommand(
 		newBootstrapCmd(),
 		newListCmd(),
@@ -71,7 +77,7 @@ Day-to-day, use:
 // (and no help flag) was supplied.
 func runRoot(cmd *cobra.Command, _ []string) error {
 	_, loadErr := config.Load()
-	switch bareRouteDecision(isTerminal(), loadErr) {
+	switch bareRouteDecision(isTerminal(), jsonout.Enabled(), loadErr) {
 	case bareRouteHelp:
 		return cmd.Help()
 	case bareRouteWizard:
@@ -112,13 +118,16 @@ const (
 // Extracted so the routing matrix is unit-testable without touching the
 // filesystem, network, or os.Stdout.
 //
-// The order matters: a non-TTY environment short-circuits to help even
-// when no config exists, because we can't render a TUI either way and
-// help is a more useful default than dumping a half-broken wizard into
-// a pipe.
-func bareRouteDecision(isTTY bool, loadErr error) bareRoute {
+// The order matters: a non-TTY environment OR an explicit --json
+// invocation short-circuits to help even when no config exists. In
+// both cases we can't (or shouldn't) render a TUI — non-TTY because
+// the terminal can't display it, --json because the caller has asked
+// for machine-readable output. Help is the safest non-TUI default for
+// F1.4; later milestones may swap in a JSON status payload when
+// jsonMode is set.
+func bareRouteDecision(isTTY bool, jsonMode bool, loadErr error) bareRoute {
 	switch {
-	case !isTTY:
+	case !isTTY || jsonMode:
 		return bareRouteHelp
 	case errors.Is(loadErr, config.ErrMissing):
 		return bareRouteWizard
