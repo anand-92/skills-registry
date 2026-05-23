@@ -22,7 +22,7 @@ SKILL.md into your agent dot-folders.
 
 Day-to-day, use:
   skill-registry list                     fuzzy-filterable list of every skill
-  skill-registry get <slug>               download a skill to ./skill-registry/<slug>/
+  skill-registry get <slug>               download a skill to ./.agents/skills/<slug>/
   skill-registry sync                     push local skills missing from the registry
   skill-registry add <source>             clone a source, multi-select what to publish
   skill-registry publish <path>           publish a single local skill folder`,

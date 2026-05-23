@@ -24,7 +24,7 @@ func newGetCmd() *cobra.Command {
 			return runGet(cmd.Context(), args[0], destFlag)
 		},
 	}
-	cmd.Flags().StringVar(&destFlag, "dest", "", "Where to write the skill (default ./skill-registry/<slug>).")
+	cmd.Flags().StringVar(&destFlag, "dest", "", "Where to write the skill (default ./.agents/skills/<slug>).")
 	return cmd
 }
 
@@ -39,7 +39,7 @@ func runGet(ctx context.Context, slug, dest string) error {
 	}
 	if dest == "" {
 		cwd, _ := os.Getwd()
-		dest = filepath.Join(cwd, "skill-registry", scan.Slugify(slug))
+		dest = filepath.Join(cwd, ".agents", "skills", scan.Slugify(slug))
 	}
 	if err := os.MkdirAll(dest, 0o755); err != nil {
 		return err
