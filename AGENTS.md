@@ -161,7 +161,7 @@ Force-pushes and any subtree change correctly invalidate.
   uv run pytest -v --cov=skills_mcp --cov-report=term-missing
   (cd cli && go vet ./... && staticcheck ./... && deadcode -test ./... && go test ./...)
   ```
-- **Dead-code detection (Go):** CI runs `staticcheck ./...` (scoped via `cli/staticcheck.conf` to disable the noisy `ST*`/`QF*` style families while keeping every unused-symbol/correctness check) plus `deadcode -test ./...` for reachability-based unused-function analysis. Both must be green to merge. Install locally with `go install honnef.co/go/tools/cmd/staticcheck@2025.1.1` and `go install golang.org/x/tools/cmd/deadcode@latest`.
+- **Dead-code detection (Go):** CI runs `staticcheck ./...` (scoped via `cli/staticcheck.conf` to disable the noisy `ST*`/`QF*` style families while keeping every unused-symbol/correctness check) plus `deadcode -test ./...` for reachability-based unused-function analysis. Both must be green to merge. See the **How to Work on This Repo** section below for the pinned install commands.
 
 ---
 
@@ -215,14 +215,16 @@ Force-pushes and any subtree change correctly invalidate.
 # Setup
 uv sync --group dev
 (cd cli && go mod download)
+# Install Go dead-code analyzers (versions pinned to match CI; see
+# .github/workflows/ci.yml — bump in lockstep)
+go install honnef.co/go/tools/cmd/staticcheck@2025.1.1
+go install golang.org/x/tools/cmd/deadcode@v0.45.0
 
 # Run all tests (Python + Go)
 uv run pytest -v --cov=skills_mcp --cov-report=term-missing
 (cd cli && go vet ./... && go test ./...)
 
 # Dead-code detection (Go)
-go install honnef.co/go/tools/cmd/staticcheck@2025.1.1
-go install golang.org/x/tools/cmd/deadcode@latest
 (cd cli && staticcheck ./... && deadcode -test ./...)
 
 # Lint & format Python
