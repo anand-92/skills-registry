@@ -1,6 +1,6 @@
 # Skill Registry — architecture deep dive
 
-This document explains how the three pieces (`skills-mcp init`, `skill-registry-mcp`, `skill-registry` Go CLI) cooperate, what each component does on the wire, and where to look when something breaks.
+This document explains how the three pieces (`skills-registry init`, `skill-registry-mcp`, `skill-registry` Go CLI) cooperate, what each component does on the wire, and where to look when something breaks.
 
 ---
 
@@ -8,7 +8,7 @@ This document explains how the three pieces (`skills-mcp init`, `skill-registry-
 
 ```mermaid
 flowchart LR
-  U([user]) -->|"uvx skills-mcp init"| Boot["skills-mcp init<br/>(Python, thin)"]
+  U([user]) -->|"uvx skills-registry init"| Boot["skills-registry init<br/>(Python, thin)"]
   Boot -->|"installs"| McpBin["skill-registry-mcp<br/>(Python, FastMCP)"]
   Boot -->|"downloads"| GoCLI["skill-registry<br/>(Go + Bubble Tea)"]
   Boot -->|"exec bootstrap"| GoCLI
@@ -22,7 +22,7 @@ Three deliverables, **single repo**, two languages.
 
 | Piece | Language | Distribution | Role |
 |---|---|---|---|
-| `skills-mcp init` | Python | PyPI (`skills-mcp`) | Thin bootstrap. Verifies `gh`, installs the MCP server persistently, downloads the Go CLI, then `exec`s it. |
+| `skills-registry init` | Python | PyPI (`skills-registry`) | Thin bootstrap. Verifies `gh`, installs the MCP server persistently, downloads the Go CLI, then `exec`s it. |
 | `skill-registry-mcp` | Python | Same PyPI wheel (entry point) | FastMCP server. Three tools: `list_skills`, `get_skill`, `publish_skill`. |
 | `skill-registry` | Go | GitHub Releases (built by `.github/workflows/release-cli.yml`) | TUI manager. `bootstrap`, `list`, `get`, `sync`, `add`, `publish`. |
 
@@ -30,7 +30,7 @@ Three deliverables, **single repo**, two languages.
 
 ## 2. Bootstrap flow
 
-`uvx skills-mcp init` → `skills_mcp/init.py:cmd_init`:
+`uvx skills-registry init` → `skills_mcp/init.py:cmd_init`:
 
 1. `ensure_authed()` — checks `gh auth status`. Exits 3 if missing, 4 if unauthed.
 2. `_install_dir()` — defaults to `~/.local/bin` (overridable via `SKILLS_BIN_DIR`).
@@ -155,7 +155,7 @@ The Python side does not carry this catalogue; it lives only in the Go CLI.
 | `init` exits 4 | `gh auth status` failed. Run `gh auth login`. |
 | `init` exits 5 | Couldn't fetch the Go binary. Download manually from the releases page and drop into `~/.local/bin/skill-registry`. |
 | `publish_skill` keeps returning conflicts | Another publish (CLI? MCP?) is racing. Retry budget is 3; if you see this repeatedly something is fanning out updates. |
-| MCP server boot fails with `No registry configured` | `~/.config/skills-mcp/registry.toml` missing and no `SKILLS_REGISTRY` env. Run `skills-mcp init` or set the env. |
+| MCP server boot fails with `No registry configured` | `~/.config/skills-mcp/registry.toml` missing and no `SKILLS_REGISTRY` env. Run `skills-registry init` or set the env. |
 | MCP server boot fails with `gh not found` in a GUI client | The fallback list missed the install location. Symlink `gh` into `~/.local/bin` or set the install dir to one of the fallback paths. |
 | Cache never invalidates | Check `~/.cache/skills-mcp/skills/<slug>.meta.json` — its `tree_sha` must equal the GitHub-reported folder SHA. |
 

@@ -1513,8 +1513,8 @@ wheels = [
 ]
 
 [[package]]
-name = "skills-mcp"
-version = "0.4.0"
+name = "skills-registry"
+version = "0.5.0"
 source = { editable = "." }
 dependencies = [
     { name = "fastmcp" },

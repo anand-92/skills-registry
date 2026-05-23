@@ -1,6 +1,6 @@
-# Contributing to skills-mcp
+# Contributing to skills-registry
 
-Thanks for your interest! `skills-mcp` is intentionally small: a GitHub-backed skill registry exposed over MCP, plus the Go CLI and bootstrap that wire it up. We want to keep it that way. Bug fixes, docs, and small focused features are very welcome. For anything larger, **please open an issue first** so we can agree on scope before you write code.
+Thanks for your interest! `skills-registry` is intentionally small: a GitHub-backed skill registry exposed over MCP, plus the Go CLI and bootstrap that wire it up. We want to keep it that way. Bug fixes, docs, and small focused features are very welcome. For anything larger, **please open an issue first** so we can agree on scope before you write code.
 
 ## Ethos
 
@@ -74,7 +74,7 @@ Before opening the PR, please confirm:
 
 Use the **Bug report** issue template. Please include:
 
-- `skills-mcp --version`
+- `skills-registry --version`
 - Your MCP client and its version
 - OS, Python version (and Go version if the CLI is involved)
 - The registry repo (`owner/repo`) if relevant

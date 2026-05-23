@@ -1,4 +1,4 @@
-"""``skills-mcp init`` — thin bootstrap that hands off to the Go CLI.
+"""``skills-registry init`` — thin bootstrap that hands off to the Go CLI.
 
 This module is intentionally minimal. It owns three jobs:
 
@@ -36,7 +36,7 @@ BINARY_NAME = "skill-registry"
 
 
 def cmd_init(args: argparse.Namespace) -> int:  # noqa: ARG001 - args reserved
-	"""Top-level driver for ``skills-mcp init``."""
+	"""Top-level driver for ``skills-registry init``."""
 	try:
 		gh = ensure_authed()
 	except GhNotFoundError as exc:
@@ -67,7 +67,7 @@ def cmd_init(args: argparse.Namespace) -> int:  # noqa: ARG001 - args reserved
 	if not binary.exists() or not os.access(binary, os.X_OK):
 		print(
 			f"\nExpected {BINARY_NAME} at {binary} but it is missing or not "
-			"executable. Try re-running `skills-mcp init` or follow the manual "
+			"executable. Try re-running `skills-registry init` or follow the manual "
 			"install steps printed above.\n",
 			file=sys.stderr,
 		)

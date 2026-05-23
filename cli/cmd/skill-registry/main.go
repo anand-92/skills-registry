@@ -16,7 +16,7 @@ func main() {
 		Short: "Manage a GitHub-backed personal skill registry",
 		Long: `skill-registry is a TUI for your personal skill registry repository.
 
-Run "skill-registry bootstrap" once (or use the parent "skills-mcp init"
+Run "skill-registry bootstrap" once (or use the parent "skills-registry init"
 wrapper) to create a registry repo and install the skill-registry doc
 SKILL.md into your agent dot-folders.
 

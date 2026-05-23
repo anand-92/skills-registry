@@ -1,6 +1,6 @@
-"""Entry point: ``python -m skills_mcp`` and the ``skills-mcp`` console script.
+"""Entry point: ``python -m skills_mcp`` and the ``skills-registry`` console script.
 
-Owns the ``skills-mcp init`` subcommand that bootstraps a GitHub-backed
+Owns the ``skills-registry init`` subcommand that bootstraps a GitHub-backed
 registry by delegating to the ``skill-registry`` Go CLI. The MCP server
 itself lives in :mod:`skills_mcp.registry_server` and is exposed via the
 ``skill-registry-mcp`` console script.
@@ -18,17 +18,17 @@ from . import __version__
 
 def main(argv: list[str] | None = None) -> int:
 	parser = argparse.ArgumentParser(
-		prog="skills-mcp",
+		prog="skills-registry",
 		description=(
-			"GitHub-backed skill registry. Run `skills-mcp init` to create a "
-			"registry repo and install the `skill-registry` CLI. The MCP "
+			"GitHub-backed skill registry. Run `skills-registry init` to create "
+			"a registry repo and install the `skill-registry` CLI. The MCP "
 			"server itself is `skill-registry-mcp` (installed alongside)."
 		),
 	)
 	parser.add_argument(
 		"--version",
 		action="version",
-		version=f"skills-mcp {__version__}",
+		version=f"skills-registry {__version__}",
 	)
 
 	subparsers = parser.add_subparsers(dest="command", metavar="<command>")

@@ -3,9 +3,9 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "skills-mcp"
-version = "0.4.0"
-description = "GitHub-backed skill registry: `skills-mcp init` bootstraps a personal registry repo, `skill-registry-mcp` serves it over MCP, and the `skill-registry` Go CLI manages it."
+name = "skills-registry"
+version = "0.5.0"
+description = "GitHub-backed skill registry: `skills-registry init` bootstraps a personal registry repo, `skill-registry-mcp` serves it over MCP, and the `skill-registry` Go CLI manages it."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "Apache-2.0" }
@@ -27,7 +27,7 @@ dependencies = [
 ]
 
 [project.scripts]
-skills-mcp = "skills_mcp.__main__:main"
+skills-registry = "skills_mcp.__main__:main"
 skill-registry-mcp = "skills_mcp.registry_server:main"
 
 [project.urls]

@@ -1,6 +1,6 @@
-# Agent Notes — skills-mcp
+# Agent Notes — skills-registry
 
-This file is a living guide for AI agents and new contributors. It captures the architecture, patterns, and trade-offs of the current (0.3.x) **GitHub-backed registry** design.
+This file is a living guide for AI agents and new contributors. It captures the architecture, patterns, and trade-offs of the current (0.5.x) **GitHub-backed registry** design. The PyPI package is `skills-registry`; the GitHub repo is still named `skills-mcp` (org URL unchanged); the Python module path is still `skills_mcp` (renaming would be a churn-without-payoff refactor).
 
 > **What changed in 0.3.0:** The project pivoted from "consolidate local skills" (gather/add) to "personal GitHub registry repo, fetched on demand". `gather` and `add` were removed. A new Go CLI handles all interactive UX, and a separate Python MCP server exposes the registry as three tools.
 
@@ -8,11 +8,11 @@ This file is a living guide for AI agents and new contributors. It captures the 
 
 ## Project Overview
 
-`skills-mcp` is now three coordinated deliverables shipped from a single repo:
+`skills-registry` is now three coordinated deliverables shipped from a single repo:
 
 | Piece | Language | Distribution | Job |
 |---|---|---|---|
-| `skills-mcp` (Python) | Python 3.10+ | PyPI (`pip install skills-mcp` / `uvx`) | Thin bootstrap (`skills-mcp init`) only. |
+| `skills-registry` (Python) | Python 3.10+ | PyPI (`pip install skills-registry` / `uvx`) | Thin bootstrap (`skills-registry init`) only. |
 | `skill-registry-mcp` (Python) | Python 3.10+ | Same wheel, second `[project.scripts]` entry point | FastMCP server with 3 tools (`list_skills`, `get_skill`, `publish_skill`). |
 | `skill-registry` (Go) | Go 1.24+ | GitHub Releases tarballs (built by `.github/workflows/release-cli.yml`) | Charmbracelet TUI: `bootstrap`, `list`, `get`, `sync`, `add`, `publish`. |
 
@@ -32,8 +32,8 @@ This file is a living guide for AI agents and new contributors. It captures the 
 ```
 src/skills_mcp/
   __init__.py            # __version__ = "0.4.0"
-  __main__.py            # `skills-mcp` console script: just wires the `init` subcommand
-  init.py                # `skills-mcp init` — thin bootstrap: gh check + Go binary download + os.execv
+  __main__.py            # `skills-registry` console script: just wires the `init` subcommand
+  init.py                # `skills-registry init` — thin bootstrap: gh check + Go binary download + os.execv
   registry_server.py     # `skill-registry-mcp` — FastMCP with list_skills / get_skill / publish_skill
   registry_api.py        # RegistryClient: gh-api wrapper, atomic Git-Data-API publish with retry
   gh.py                  # find_gh() PATH+fallback lookup, ensure_authed(), gh_api() helper
@@ -69,7 +69,7 @@ website/                 # Marketing site sources (deployed independently)
 ### Three deliverables, one repo
 
 ```
-[user] → uvx skills-mcp init (Python)
+[user] → uvx skills-registry init (Python)
             ├─ ensure_authed(gh)
             ├─ gh release download skill-registry (Go binary → ~/.local/bin)
             └─ os.execv → `skill-registry bootstrap`
@@ -82,11 +82,11 @@ website/                 # Marketing site sources (deployed independently)
                             └─ print MCP JSON snippet
 ```
 
-Persisting `skill-registry-mcp` for desktop MCP clients (Claude Desktop, Cursor, VS Code/Copilot) is the user's responsibility — `uv tool install skills-mcp` (documented in the README) installs both console-script entry points (`skills-mcp` and `skill-registry-mcp`) so clients can launch the registry server without depending on the `uvx` cache. `cmd_init` does **not** run this step itself.
+Persisting `skill-registry-mcp` for desktop MCP clients (Claude Desktop, Cursor, VS Code/Copilot) is the user's responsibility — `uv tool install skills-registry` (documented in the README) installs both console-script entry points (`skills-registry` and `skill-registry-mcp`) so clients can launch the registry server without depending on the `uvx` cache. `cmd_init` does **not** run this step itself.
 
 ### Why a separate Go binary?
 
-The user-facing `building-glamorous-tuis` skill recommends Charmbracelet (Go). Charmbracelet has no first-class Python equivalent. Building the bootstrap UX in Bubble Tea required a Go binary regardless, so `skills-mcp init` was reduced to **a thin Python shim that downloads-then-execs**. This keeps the polished TUI logic in one place and lets the MCP server stay in Python (where FastMCP lives).
+The user-facing `building-glamorous-tuis` skill recommends Charmbracelet (Go). Charmbracelet has no first-class Python equivalent. Building the bootstrap UX in Bubble Tea required a Go binary regardless, so `skills-registry init` was reduced to **a thin Python shim that downloads-then-execs**. This keeps the polished TUI logic in one place and lets the MCP server stay in Python (where FastMCP lives).
 
 ### Why no `git`, no SSH, no HTTP client?
 
@@ -159,7 +159,7 @@ Force-pushes and any subtree change correctly invalidate.
 1. **No `remove`/`update` commands.** `Publish` already handles deletions via stale-file detection, but there's no user-facing way to drop a skill from the registry. Easy follow-up.
 2. **No multi-registry support.** Config is one-repo. Adding a `[registries]` array + a `connect <owner/repo>` CLI command would let an agent see several registries side-by-side.
 3. **Browsing third-party public registries** is not yet a first-class flow. The read tools (`list_skills`, `get_skill`) don't require write access — wiring them to an arbitrary `owner/repo` would be a few lines.
-4. **Windows MCP-server-side init path** is best-effort. The Go binary builds for Windows, but `skills-mcp init`'s `gh release download` + `chmod` assumes POSIX. PowerShell helpers + `gh.exe` lookup would close this gap.
+4. **Windows MCP-server-side init path** is best-effort. The Go binary builds for Windows, but `skills-registry init`'s `gh release download` + `chmod` assumes POSIX. PowerShell helpers + `gh.exe` lookup would close this gap.
 5. **Skill MD template duplicated** between Python (`skill_md.py`) and Go (`bootstrap/skillmd.go`). They must stay in sync; future template changes should land in both places (and there's no test today that enforces parity).
 6. **`build_server()` does no schema validation** of the SKILL.md it serves. A malformed skill makes `list_skills` skip it silently; a verbose-mode error log would help debugging.
 
@@ -173,7 +173,7 @@ Force-pushes and any subtree change correctly invalidate.
 
 - `.github/workflows/ci.yml` — runs the Python job (ruff lint + format + pytest with coverage) **and** the Go job (vet + build + test) in parallel on every push/PR. Both must be green to merge.
 - `.github/workflows/release.yml` — builds and publishes the Python wheel to PyPI on `release: published`. Relies on CI having passed on `main`.
-- `.github/workflows/release-cli.yml` — on `cli-v*` tag push, builds `darwin/amd64`, `darwin/arm64`, `linux/amd64`, `linux/arm64`, `windows/amd64` tarballs and uploads them as release assets. `skills-mcp init` downloads from this same release.
+- `.github/workflows/release-cli.yml` — on `cli-v*` tag push, builds `darwin/amd64`, `darwin/arm64`, `linux/amd64`, `linux/arm64`, `windows/amd64` tarballs and uploads them as release assets. `skills-registry init` downloads from this same release.
 - **Gaps:** No Python version matrix yet, no OS matrix for the Python tests, no Dependabot, no codecov upload (coverage XML is generated but not uploaded), no integration tests that actually call GitHub.
 
 ---

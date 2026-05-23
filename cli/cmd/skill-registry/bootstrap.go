@@ -28,7 +28,7 @@ func newBootstrapCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "bootstrap",
 		Short: "Create the registry repo, push local skills, and install agent docs",
-		Long: `Run by "skills-mcp init" — but safe to re-run.
+		Long: `Run by "skills-registry init" — but safe to re-run.
 
 If a registry config already exists, the repo-creation step is skipped and
 you go straight to the agent multi-select.`,

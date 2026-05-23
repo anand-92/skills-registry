@@ -2,7 +2,7 @@
 
 ## Reporting a vulnerability
 
-If you believe you have found a security issue in `skills-mcp`, please report it **privately** via [GitHub Security Advisories](https://github.com/anand-92/skills-mcp/security/advisories/new).
+If you believe you have found a security issue in `skills-registry`, please report it **privately** via [GitHub Security Advisories](https://github.com/anand-92/skills-mcp/security/advisories/new).
 
 Do **not** open a public GitHub issue, discussion, or pull request for security problems. Public reports give attackers a head start before a fix lands.
 
@@ -10,14 +10,14 @@ When you report, please include:
 
 - A description of the issue and its impact.
 - Steps to reproduce.
-- The version (`skills-mcp --version`), your Python (and Go, if relevant) version, and OS.
+- The version (`skills-registry --version`), your Python (and Go, if relevant) version, and OS.
 - Any logs or stack traces you can share.
 
 We will acknowledge your report, investigate, and coordinate a fix and disclosure timeline with you. Credit in the release notes is offered by default; let us know if you'd prefer to stay anonymous.
 
 ## Scope and threat model
 
-`skills-mcp` ships three things: the `skills-mcp init` bootstrap, the `skill-registry-mcp` MCP server, and the `skill-registry` Go CLI. All three talk to GitHub exclusively through the user's authenticated `gh` CLI — there is no embedded HTTP client, no direct `git` shell-out, and no SSH agent dependency. `gh auth status` is the only trust anchor; if it fails, every command exits before touching the network.
+`skills-registry` ships three things: the `skills-registry init` bootstrap, the `skill-registry-mcp` MCP server, and the `skill-registry` Go CLI. All three talk to GitHub exclusively through the user's authenticated `gh` CLI — there is no embedded HTTP client, no direct `git` shell-out, and no SSH agent dependency. `gh auth status` is the only trust anchor; if it fails, every command exits before touching the network.
 
 The MCP server's surface is three tools (`list_skills`, `get_skill`, `publish_skill`) plus a local on-disk cache at `~/.cache/skills-mcp/skills/<slug>/`. The CLI exposes the same operations interactively.
 

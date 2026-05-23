@@ -10,9 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: pypi
-      url: https://pypi.org/p/skills-mcp
-    permissions:
-      id-token: write  # Required for PyPI Trusted Publishing.
+      url: https://pypi.org/p/skills-registry
     steps:
       - uses: actions/checkout@v4
 
@@ -25,3 +23,5 @@ jobs:
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          password: ${{ secrets.PYPI_API_TOKEN }}

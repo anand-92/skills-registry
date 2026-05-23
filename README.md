@@ -1,8 +1,8 @@
 <div align="center">
 
-<img src="docs/img/banner.jpg" alt="skills-mcp — One GitHub repo. Every AI agent. Skills fetched on demand." width="100%">
+<img src="docs/img/banner.jpg" alt="skills-registry — One GitHub repo. Every AI agent. Skills fetched on demand." width="100%">
 
-# skills-mcp
+# skills-registry
 
 **One GitHub repo, every AI agent. Skills fetched on demand — not auto-loaded into every startup context.**
 
@@ -24,7 +24,7 @@
 
 Your AI tools — Claude Code, Cursor, Codex, Goose, Windsurf, all of them — auto-load every skill you've installed into the agent's startup context. That's tokens you pay for whether the agent uses the skill or not.
 
-`skills-mcp` flips the model: skills live in **one GitHub repo you own**, and agents fetch them on demand through an MCP server. The only thing each agent auto-loads is a tiny pointer file that teaches it *how* to fetch the rest.
+`skills-registry` flips the model: skills live in **one GitHub repo you own**, and agents fetch them on demand through an MCP server. The only thing each agent auto-loads is a tiny pointer file that teaches it *how* to fetch the rest.
 
 **You get:**
 
@@ -52,7 +52,7 @@ When the user asks about a PDF, do the following:
 ...
 ```
 
-That's it — one file, plus whatever reference docs or examples the agent should be able to see. Most modern AI coding tools already understand this format; `skills-mcp` lets you keep them all in one place.
+That's it — one file, plus whatever reference docs or examples the agent should be able to see. Most modern AI coding tools already understand this format; `skills-registry` lets you keep them all in one place.
 
 ---
 
@@ -61,7 +61,7 @@ That's it — one file, plus whatever reference docs or examples the agent shoul
 > **You need:** [GitHub CLI](https://cli.github.com/) installed and authenticated (`gh auth status` should succeed) and [uv](https://github.com/astral-sh/uv) (`pipx install uv` if you don't have it).
 
 ```bash
-uvx skills-mcp init
+uvx skills-registry init
 ```
 
 That's the whole install. The bootstrap will:
@@ -105,7 +105,7 @@ Most users only ever touch `list`, `get`, and `publish`. The TUI is fuzzy-filter
 
 ## vs. the alternatives
 
-|  | Local dot-folders | Dotfiles repo | **skills-mcp** |
+|  | Local dot-folders | Dotfiles repo | **skills-registry** |
 |---|:---:|:---:|:---:|
 | One home for all your agents | ❌ duplicated | ✅ | ✅ |
 | Fetched on demand (no startup tokens) | ❌ | ❌ | ✅ |
@@ -118,7 +118,7 @@ Most users only ever touch `list`, `get`, and `publish`. The TUI is fuzzy-filter
 
 ## Configuration
 
-Most people never touch these — `skills-mcp init` sets up sensible defaults. Override them via your shell or MCP client environment when you need to:
+Most people never touch these — `skills-registry init` sets up sensible defaults. Override them via your shell or MCP client environment when you need to:
 
 | Variable | Default | What it does |
 |---|---|---|
@@ -135,32 +135,32 @@ The registry repo URL itself is stored in `~/.config/skills-mcp/registry.toml`.
 <details>
 <summary><strong>"gh not found" or exit code 3</strong></summary>
 
-Install GitHub CLI from <https://cli.github.com/> and run `gh auth login`. `skills-mcp` deliberately uses `gh` for every GitHub call — no SSH key shenanigans, no `git config user.email` required — so it has to be on your `PATH` (or in `~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin`, or `/usr/bin`).
+Install GitHub CLI from <https://cli.github.com/> and run `gh auth login`. `skills-registry` deliberately uses `gh` for every GitHub call — no SSH key shenanigans, no `git config user.email` required — so it has to be on your `PATH` (or in `~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin`, or `/usr/bin`).
 </details>
 
 <details>
 <summary><strong>"No registry configured"</strong></summary>
 
-You haven't run `skills-mcp init` yet, or your config file at `~/.config/skills-mcp/registry.toml` is missing. Run `skills-mcp init`, or set `SKILLS_REGISTRY=owner/repo` directly.
+You haven't run `skills-registry init` yet, or your config file at `~/.config/skills-mcp/registry.toml` is missing. Run `skills-registry init`, or set `SKILLS_REGISTRY=owner/repo` directly.
 </details>
 
 <details>
 <summary><strong>The MCP server doesn't show up in my client</strong></summary>
 
-Make sure you pasted the JSON snippet `skills-mcp init` printed (the absolute path to `skill-registry-mcp` matters — desktop MCP clients don't inherit your shell `PATH`). Then fully restart the client (not just reload).
+Make sure you pasted the JSON snippet `skills-registry init` printed (the absolute path to `skill-registry-mcp` matters — desktop MCP clients don't inherit your shell `PATH`). Then fully restart the client (not just reload).
 </details>
 
 <details>
 <summary><strong>Multiple GitHub accounts</strong></summary>
 
-`skills-mcp` uses whichever account `gh auth status` says is active. Use `gh auth switch` before `init` to pick the right one.
+`skills-registry` uses whichever account `gh auth status` says is active. Use `gh auth switch` before `init` to pick the right one.
 </details>
 
 ---
 
 ## Manual MCP client config
 
-`skills-mcp init` prints platform-correct JSON, but if you prefer to set it up by hand:
+`skills-registry init` prints platform-correct JSON, but if you prefer to set it up by hand:
 
 <details>
 <summary>Claude Code / Claude Desktop / Cursor / VS Code (<code>mcp.json</code>)</summary>
@@ -189,7 +189,7 @@ command = "/Users/you/.local/bin/skill-registry-mcp"
 
 ## Project status
 
-`skills-mcp` is at **v0.4** — usable day-to-day but pre-1.0. The MCP tool surface (`list_skills`, `get_skill`, `publish_skill`) is stable. The CLI commands are stable. Internals may shift between minor versions; pin to a specific version if that worries you.
+`skills-registry` is at **v0.5** — usable day-to-day but pre-1.0. The MCP tool surface (`list_skills`, `get_skill`, `publish_skill`) is stable. The CLI commands are stable. Internals may shift between minor versions; pin to a specific version if that worries you.
 
 Found a bug? Have an idea? [Open an issue](https://github.com/anand-92/skills-mcp/issues). PRs welcome — see [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
