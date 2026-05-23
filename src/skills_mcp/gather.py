@@ -133,6 +133,24 @@ class Plan:
 	conflicts: list[Conflict]
 
 
+@dataclass
+class ExecuteFailure:
+	"""A single skill that could not be written during execute_plan."""
+
+	slug: str
+	src_folder: Path
+	src_label: str
+	reason: str
+
+
+@dataclass
+class ExecuteResult:
+	"""Outcome of execute_plan: number written and any per-entry failures."""
+
+	written: int = 0
+	failures: list[ExecuteFailure] = field(default_factory=list)
+
+
 # ---------------------------------------------------------------------------
 # Discovery
 
@@ -324,40 +342,98 @@ def execute_plan(
 	symlink: bool = False,
 	force: bool = False,
 	log_fn: Callable[[str], None] = print,
-) -> int:
+) -> ExecuteResult:
 	"""Copy / symlink each planned skill into ``plan.dest``.
 
-	Returns the number of skill folders actually written (existing destinations
-	without ``force`` are skipped, not counted).
+	A failure on one entry (broken symlink under the source, vanished folder,
+	permission error, ...) is recorded in :attr:`ExecuteResult.failures` and the
+	loop continues, so a single bad skill never blocks the rest. Existing
+	destinations without ``force`` are skipped and not counted as written.
 	"""
 	plan.dest.mkdir(parents=True, exist_ok=True)
-	written = 0
+	result = ExecuteResult()
 	for entry in plan.entries:
-		dst = entry.dst_folder
-		if dst.exists() or dst.is_symlink():
-			if not force:
-				log_fn(f"  skip {entry.slug} (already at {dst})")
-				continue
-			if dst.is_symlink() or dst.is_file():
-				dst.unlink()
-			else:
-				shutil.rmtree(dst)
-		if symlink:
-			dst.symlink_to(entry.src_folder, target_is_directory=True)
+		try:
+			wrote = _execute_entry(entry, symlink=symlink, force=force, log_fn=log_fn)
+		except Exception as exc:
+			reason = _format_failure(exc)
+			result.failures.append(
+				ExecuteFailure(
+					slug=entry.slug,
+					src_folder=entry.src_folder,
+					src_label=entry.src_label,
+					reason=reason,
+				)
+			)
+			log_fn(f"  ! {entry.slug} failed: {reason}")
+			continue
+		if wrote:
+			result.written += 1
+	return result
+
+
+def _execute_entry(
+	entry: PlanEntry,
+	*,
+	symlink: bool,
+	force: bool,
+	log_fn: Callable[[str], None],
+) -> bool:
+	"""Apply a single :class:`PlanEntry`. Returns True if a folder was written."""
+	dst = entry.dst_folder
+	if dst.exists() or dst.is_symlink():
+		if not force:
+			log_fn(f"  skip {entry.slug} (already at {dst})")
+			return False
+		if dst.is_symlink() or dst.is_file():
+			dst.unlink()
 		else:
-			shutil.copytree(entry.src_folder, dst, symlinks=False)
-		written += 1
-	return written
+			shutil.rmtree(dst)
+	if symlink:
+		dst.symlink_to(entry.src_folder, target_is_directory=True)
+	else:
+		# ignore_dangling_symlinks=True: a broken symlink inside the source
+		# folder is silently skipped instead of aborting the whole copy.
+		shutil.copytree(
+			entry.src_folder,
+			dst,
+			symlinks=False,
+			ignore_dangling_symlinks=True,
+		)
+	return True
+
+
+def _format_failure(exc: BaseException) -> str:
+	"""Compact one-liner for an exception raised while executing an entry."""
+	if isinstance(exc, shutil.Error) and exc.args:
+		raw = exc.args[0] if isinstance(exc.args[0], list) else [exc.args[0]]
+		parts: list[str] = []
+		for item in raw[:3]:
+			if isinstance(item, tuple) and len(item) >= 3:
+				parts.append(f"{item[0]}: {item[2]}")
+			else:
+				parts.append(str(item))
+		suffix = f" (+{len(raw) - 3} more)" if len(raw) > 3 else ""
+		return "; ".join(parts) + suffix
+	return f"{type(exc).__name__}: {exc}"
 
 
 def delete_sources(
 	plan: Plan,
 	*,
+	skip_slugs: set[str] | None = None,
 	log_fn: Callable[[str], None] = print,
 ) -> int:
-	"""Remove every source skill folder named in ``plan``. Returns count removed."""
+	"""Remove every source skill folder named in ``plan``. Returns count removed.
+
+	Slugs in ``skip_slugs`` are left alone — typically used to preserve sources
+	whose copy failed in :func:`execute_plan`.
+	"""
+	skip = skip_slugs or set()
 	removed = 0
 	for entry in plan.entries:
+		if entry.slug in skip:
+			continue
 		src = entry.src_folder
 		if not src.exists():
 			continue
@@ -656,9 +732,19 @@ def cmd_gather(args: argparse.Namespace) -> int:
 		print("Aborted.")
 		return 0
 
-	written = execute_plan(plan, symlink=args.symlink, force=args.force)
+	result = execute_plan(plan, symlink=args.symlink, force=args.force)
 	verb = "Linked" if args.symlink else "Wrote"
-	print(f"\n✓ {verb} {written} skill folder(s) to {dest}.")
+	print(f"\n✓ {verb} {result.written} skill folder(s) to {dest}.")
+
+	failed_slugs = {f.slug for f in result.failures}
+	if result.failures:
+		print(
+			f"\n! {len(result.failures)} skill(s) failed to copy. "
+			"The other skills were still written, and the failed sources will NOT be deleted."
+		)
+		for failure in result.failures:
+			print(f"  - {failure.slug}  ({failure.src_label}/{failure.src_folder.name})")
+			print(f"      {failure.reason}")
 
 	if args.keep_sources:
 		delete = False
@@ -670,16 +756,18 @@ def cmd_gather(args: argparse.Namespace) -> int:
 			"tools and consume context at startup. They've already been copied to the destination."
 		)
 		for entry in plan.entries:
+			if entry.slug in failed_slugs:
+				continue
 			print(f"  - {entry.src_label}/{entry.src_folder.name}")
 		delete = _ask("\nDelete source folders?", default=False)
 
 	if delete:
-		n = delete_sources(plan)
+		n = delete_sources(plan, skip_slugs=failed_slugs)
 		print(f"✓ Removed {n} source skill folder(s).")
 
 	auto_results = _auto_configure_clients(dest, dry_run=False)
 	_show_client_setup(dest, auto_results, dry_run=False)
-	return 0
+	return 1 if result.failures else 0
 
 
 def register_subparser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParser:

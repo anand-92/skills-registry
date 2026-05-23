@@ -243,8 +243,9 @@ def _make_simple_plan(tmp_path: Path, make_skill: Any) -> Plan:
 
 def test_execute_plan_copies_folder(tmp_path: Path, make_skill: Any) -> None:
 	plan = _make_simple_plan(tmp_path, make_skill)
-	written = execute_plan(plan, log_fn=lambda *_: None)
-	assert written == 1
+	result = execute_plan(plan, log_fn=lambda *_: None)
+	assert result.written == 1
+	assert result.failures == []
 	out = tmp_path / "dest" / "alpha" / "SKILL.md"
 	assert out.is_file()
 	assert "body" in out.read_text(encoding="utf-8")
@@ -252,8 +253,9 @@ def test_execute_plan_copies_folder(tmp_path: Path, make_skill: Any) -> None:
 
 def test_execute_plan_symlinks_when_requested(tmp_path: Path, make_skill: Any) -> None:
 	plan = _make_simple_plan(tmp_path, make_skill)
-	written = execute_plan(plan, symlink=True, log_fn=lambda *_: None)
-	assert written == 1
+	result = execute_plan(plan, symlink=True, log_fn=lambda *_: None)
+	assert result.written == 1
+	assert result.failures == []
 	link = tmp_path / "dest" / "alpha"
 	assert link.is_symlink()
 
@@ -263,8 +265,9 @@ def test_execute_plan_skips_existing_without_force(tmp_path: Path, make_skill: A
 	(tmp_path / "dest").mkdir()
 	(tmp_path / "dest" / "alpha").mkdir()
 	(tmp_path / "dest" / "alpha" / "MARKER").write_text("existing", encoding="utf-8")
-	written = execute_plan(plan, log_fn=lambda *_: None)
-	assert written == 0
+	result = execute_plan(plan, log_fn=lambda *_: None)
+	assert result.written == 0
+	assert result.failures == []
 	assert (tmp_path / "dest" / "alpha" / "MARKER").exists()
 
 
@@ -273,10 +276,96 @@ def test_execute_plan_overwrites_existing_with_force(tmp_path: Path, make_skill:
 	(tmp_path / "dest").mkdir()
 	(tmp_path / "dest" / "alpha").mkdir()
 	(tmp_path / "dest" / "alpha" / "MARKER").write_text("existing", encoding="utf-8")
-	written = execute_plan(plan, force=True, log_fn=lambda *_: None)
-	assert written == 1
+	result = execute_plan(plan, force=True, log_fn=lambda *_: None)
+	assert result.written == 1
+	assert result.failures == []
 	assert not (tmp_path / "dest" / "alpha" / "MARKER").exists()
 	assert (tmp_path / "dest" / "alpha" / "SKILL.md").is_file()
+
+
+def test_execute_plan_skips_dangling_symlinks_inside_source(
+	tmp_path: Path, make_skill: Any
+) -> None:
+	"""A broken symlink under a skill folder must not abort the copy."""
+	src_dir = tmp_path / "src"
+	src_dir.mkdir()
+	make_skill(src_dir, "alpha", body="body")
+	skill_folder = src_dir / "alpha"
+	try:
+		os.symlink(skill_folder / "this-does-not-exist", skill_folder / "scripts")
+	except (OSError, NotImplementedError):
+		pytest.skip("symlinks not supported on this platform")
+	dest = tmp_path / "dest"
+	plan = build_plan([_src(src_dir, "test")], "SKILL.md", dest)
+	result = execute_plan(plan, log_fn=lambda *_: None)
+	assert result.written == 1
+	assert result.failures == []
+	assert (dest / "alpha" / "SKILL.md").is_file()
+	assert not (dest / "alpha" / "scripts").exists()
+
+
+def test_execute_plan_records_failure_when_source_vanishes(tmp_path: Path, make_skill: Any) -> None:
+	"""Source folder removed between plan and execute is captured as a failure."""
+	import shutil as _shutil
+
+	src_dir = tmp_path / "src"
+	src_dir.mkdir()
+	make_skill(src_dir, "alpha", body="body")
+	dest = tmp_path / "dest"
+	plan = build_plan([_src(src_dir, "test")], "SKILL.md", dest)
+	_shutil.rmtree(src_dir / "alpha")
+	result = execute_plan(plan, log_fn=lambda *_: None)
+	assert result.written == 0
+	assert len(result.failures) == 1
+	assert result.failures[0].slug == "alpha"
+	assert "alpha" in str(result.failures[0].src_folder)
+
+
+def test_execute_plan_continues_past_failed_entry(tmp_path: Path, make_skill: Any) -> None:
+	"""One bad entry must not stop later entries from being written."""
+	import shutil as _shutil
+
+	src_a = tmp_path / "a"
+	src_b = tmp_path / "b"
+	src_a.mkdir()
+	src_b.mkdir()
+	make_skill(src_a, "alpha", body="a")
+	make_skill(src_b, "beta", body="b")
+	dest = tmp_path / "dest"
+	plan = build_plan(
+		[_src(src_a, "~/.claude/skills"), _src(src_b, "~/.factory/skills")],
+		"SKILL.md",
+		dest,
+	)
+	# Break the first source after planning.
+	_shutil.rmtree(src_a / "alpha")
+	result = execute_plan(plan, log_fn=lambda *_: None)
+	assert result.written == 1
+	assert len(result.failures) == 1
+	assert result.failures[0].slug == "alpha"
+	assert (dest / "beta" / "SKILL.md").is_file()
+	assert not (dest / "alpha").exists()
+
+
+def test_delete_sources_respects_skip_slugs(tmp_path: Path, make_skill: Any) -> None:
+	"""delete_sources must leave skip_slugs entries untouched."""
+	src_a = tmp_path / "a"
+	src_b = tmp_path / "b"
+	src_a.mkdir()
+	src_b.mkdir()
+	make_skill(src_a, "alpha", body="a")
+	make_skill(src_b, "beta", body="b")
+	dest = tmp_path / "dest"
+	plan = build_plan(
+		[_src(src_a, "~/.claude/skills"), _src(src_b, "~/.factory/skills")],
+		"SKILL.md",
+		dest,
+	)
+	execute_plan(plan, log_fn=lambda *_: None)
+	removed = delete_sources(plan, skip_slugs={"alpha"}, log_fn=lambda *_: None)
+	assert removed == 1
+	assert (src_a / "alpha").exists()
+	assert not (src_b / "beta").exists()
 
 
 # ---------------------------------------------------------------------------
