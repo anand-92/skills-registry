@@ -382,9 +382,9 @@ func TestPushTreeViaGitNewRepo(t *testing.T) {
 	}
 
 	files := map[string][]byte{
-		"code-review/SKILL.md":             []byte("# Code Review"),
-		"code-review/resources/extra.md":   []byte("extra"),
-		"qa/SKILL.md":                      []byte("# QA"),
+		"code-review/SKILL.md":           []byte("# Code Review"),
+		"code-review/resources/extra.md": []byte("extra"),
+		"qa/SKILL.md":                    []byte("# QA"),
 	}
 	if err := c.PushTreeViaGit(context.Background(), files, "init: import 2 skills"); err != nil {
 		t.Fatalf("PushTreeViaGit: %v", err)
@@ -606,7 +606,7 @@ func TestPushTreeViaGitEmitsPushingStatus(t *testing.T) {
 }
 
 // TestParseSummary_FoldedBlockScalarDescription verifies that the SKILL.md
-// summarizer reads the common YAML folded-scalar (``>``) and literal (``|``)
+// summarizer reads the common YAML folded-scalar (“>“) and literal (“|“)
 // descriptions instead of storing the indicator character verbatim. The
 // previous parser silently dropped the multi-line continuation lines and
 // surfaced ">" / ">-" in the list TUI.
