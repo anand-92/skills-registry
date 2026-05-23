@@ -115,11 +115,6 @@ func New(repo, branch string) (*Client, error) {
 	}, nil
 }
 
-// RepoURL returns the canonical https URL for this repo (no trailing slash).
-func (c *Client) RepoURL() string {
-	return "https://github.com/" + c.Repo
-}
-
 // Summary is one row in the listing.
 type Summary struct {
 	Slug        string
