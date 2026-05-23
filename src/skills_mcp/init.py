@@ -1,11 +1,16 @@
 """``skills-registry init`` — thin bootstrap that hands off to the Go CLI.
 
-This module is intentionally minimal. It owns three jobs:
+This module is intentionally minimal. It owns two jobs:
 
 1. Verify ``gh`` is installed and authenticated.
-2. Make ``skill-registry-mcp`` available as a persistent binary so MCP
-   clients can launch it without relying on the user's ``uvx`` cache.
-3. Download the ``skill-registry`` Go binary and ``exec`` into it.
+2. Download the ``skill-registry`` Go binary into ``~/.local/bin`` (or
+   ``SKILLS_BIN_DIR``) and ``exec`` into it.
+
+Persistent installation of the ``skill-registry-mcp`` entry point (needed
+so desktop MCP clients can launch the server without the user's ``uvx``
+cache) is **explicitly the user's responsibility** — ``uv tool install
+skills-registry`` (or ``pipx install skills-registry``), documented in
+the README. ``cmd_init`` does not run that step itself.
 
 All TUI work — repo prompts, agent multi-select, conflict resolution —
 lives in the Go binary so we maintain exactly one TUI codebase.

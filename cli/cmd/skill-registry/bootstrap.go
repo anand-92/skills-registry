@@ -514,7 +514,11 @@ func pushLocalSkills(ctx context.Context, client *registry.Client, local []scan.
 		tui.HintStyle.Render("·"), len(missing), len(files), client.Repo)
 
 	client.OnProgress = renderProgress(os.Stderr, "prepared")
-	defer func() { client.OnProgress = nil }()
+	client.OnStatus = func(msg string) { fmt.Fprintf(os.Stderr, "  %s\n", msg) }
+	defer func() {
+		client.OnProgress = nil
+		client.OnStatus = nil
+	}()
 
 	if err := client.PushTreeViaGit(ctx, files, fmt.Sprintf("init: import %d skill(s)", len(missing))); err != nil {
 		return 0, err
@@ -525,7 +529,9 @@ func pushLocalSkills(ctx context.Context, client *registry.Client, local []scan.
 // renderProgress returns an OnProgress callback that overwrites a single
 // "<verb> X/N files" line on the given writer (typically stderr). `verb` lets
 // callers choose between "uploaded" (REST blob path) and "prepared" (git path,
-// where the final push happens after the callback finishes).
+// where the final push happens after the callback finishes — that step is
+// surfaced separately via OnStatus so the message only fires when an actual
+// push is about to happen).
 func renderProgress(w io.Writer, verb string) func(done, total int) {
 	if verb == "" {
 		verb = "uploaded"
@@ -541,9 +547,6 @@ func renderProgress(w io.Writer, verb string) func(done, total int) {
 		fmt.Fprintf(w, "\r%s", line)
 		if done >= total {
 			fmt.Fprintln(w)
-			if verb == "prepared" {
-				fmt.Fprintln(w, "  pushing to github…")
-			}
 		}
 	}
 }

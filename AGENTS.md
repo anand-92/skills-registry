@@ -72,10 +72,12 @@ docs/
             ├─ ensure_authed(gh)
             ├─ gh release download skill-registry (Go binary → ~/.local/bin)
             └─ os.execv → `skill-registry bootstrap`
+                            ├─ require `git` on PATH (fail-fast)
                             ├─ scan dot-folders (Go)
                             ├─ prompt name/visibility (Bubble Tea)
                             ├─ gh repo create
-                            ├─ Git-Data-API push (blobs → tree → commit → ref)
+                            ├─ PushTreeViaGit: single `git push` of every new skill
+                            │   (gh auth setup-git → tempdir clone-or-init → commit → push)
                             ├─ multi-select agent install targets
                             ├─ write skill-registry/SKILL.md to each
                             └─ print MCP JSON snippet

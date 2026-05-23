@@ -81,6 +81,12 @@ type Client struct {
 	// count, `total` is the operation's total file count. Useful for progress
 	// bars.
 	OnProgress func(done, total int)
+	// OnStatus, if set, is called by long-running operations to surface a
+	// short human-readable status string (e.g. "pushing to github…").
+	// Distinct from OnProgress so the caller only emits the message when work
+	// is actually about to happen (a `git push` won't fire on a no-op
+	// PushTreeViaGit call where the working tree matches the remote).
+	OnStatus func(msg string)
 	// HTTPSURL, if set, overrides the default `https://github.com/<repo>.git`
 	// remote URL used by PushTreeViaGit. Tests set this to a local bare repo
 	// path; production callers leave it empty.
@@ -523,16 +529,32 @@ func (c *Client) PushTreeViaGit(ctx context.Context, files map[string][]byte, me
 	total := len(files)
 	for rel, content := range files {
 		rel = strings.ReplaceAll(rel, string(filepath.Separator), "/")
-		rel = strings.TrimPrefix(rel, "/")
 		if rel == "" {
 			return errors.New("rejected empty relative path")
+		}
+		// Reject anything that looks absolute up front (single or multiple
+		// leading slashes, Windows drive letters, UNC roots). Go's
+		// filepath.Join Cleans its result and would keep an absolute second
+		// arg inside `work`, but a caller sending `/etc/passwd` almost
+		// certainly meant something else; refuse rather than silently rename
+		// to `<work>/etc/passwd`.
+		if strings.HasPrefix(rel, "/") {
+			return fmt.Errorf("rejected absolute path: %q", rel)
 		}
 		// Path-traversal guard mirrors registry_api._normalize_rel_path.
 		clean := filepath.ToSlash(filepath.Clean(rel))
 		if clean == ".." || strings.HasPrefix(clean, "../") || strings.Contains(clean, "/../") {
 			return fmt.Errorf("rejected path containing ..: %q", rel)
 		}
-		full := filepath.Join(work, filepath.FromSlash(clean))
+		osClean := filepath.FromSlash(clean)
+		// Defense in depth for Windows: `C:\foo`, `\foo`, or `\\server\share`
+		// survive the leading-slash check above (we normalized backslashes to
+		// forward slashes, but VolumeName / IsAbs still recognize the cleaned
+		// form on Windows).
+		if filepath.IsAbs(osClean) || filepath.VolumeName(osClean) != "" {
+			return fmt.Errorf("rejected absolute path: %q", rel)
+		}
+		full := filepath.Join(work, osClean)
 		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
 			return err
 		}
@@ -561,6 +583,11 @@ func (c *Client) PushTreeViaGit(ctx context.Context, files map[string][]byte, me
 	}
 	if err := runGit("commit", "-m", message); err != nil {
 		return err
+	}
+	// Surface the upcoming network step now that we know we're actually
+	// about to push (the no-op case above already returned).
+	if c.OnStatus != nil {
+		c.OnStatus("pushing to github…")
 	}
 	if err := runGit("push", "-u", "origin", c.DefaultBranch); err != nil {
 		return err

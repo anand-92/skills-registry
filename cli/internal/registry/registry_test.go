@@ -468,8 +468,111 @@ func TestPushTreeViaGitExistingRepo(t *testing.T) {
 }
 
 // TestPushTreeViaGitRejectsTraversal makes sure the path validation matches
-// the REST blob path and refuses ../-style payloads.
+// the REST blob path and refuses ../-style payloads. Also exercises the
+// absolute-path rejection added after CodeRabbit / factory-droid flagged that
+// `strings.TrimPrefix(rel, "/")` only strips one leading slash, so
+// `//etc/passwd` would survive normalization and trick filepath.Join into
+// writing outside the tempdir.
 func TestPushTreeViaGitRejectsTraversal(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+	cases := []struct {
+		name string
+		path string
+	}{
+		{"parent-dir", "../escape.md"},
+		{"nested-parent-dir", "skills/../../escape.md"},
+		{"single-leading-slash", "/etc/passwd"},
+		{"double-leading-slash", "//etc/passwd"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			bin, _ := stubGH(t, []map[string]any{
+				{"key": "auth setup-git", "body": ""},
+				{"key": "GET user", "body": map[string]any{"login": "tester"}},
+				{"key": "GET repos/x/y/git/ref/heads/main", "body": "HTTP 404: not found", "exit": 1},
+			})
+			c := &Client{
+				GH:            bin,
+				Repo:          "x/y",
+				DefaultBranch: "main",
+				HTTPSURL:      initBareRemote(t),
+			}
+			err := c.PushTreeViaGit(context.Background(),
+				map[string][]byte{tc.path: []byte("bad")}, "init")
+			if err == nil {
+				t.Fatalf("expected rejection for %q", tc.path)
+			}
+		})
+	}
+}
+
+// TestPushTreeViaGitNoOpDoesNotEmitPushingStatus verifies that re-running
+// PushTreeViaGit against a remote whose tree already matches the local payload
+// returns nil without firing OnStatus("pushing to github…"). Without this,
+// callers (bootstrap) would print "pushing to github…" even when nothing
+// actually went over the wire.
+func TestPushTreeViaGitNoOpDoesNotEmitPushingStatus(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+	// Seed: bare remote with one file already committed under "noop/SKILL.md".
+	remote := initBareRemote(t)
+	seed := t.TempDir()
+	runGitInTest(t, seed, "clone", remote, "seed")
+	seedRepo := filepath.Join(seed, "seed")
+	runGitInTest(t, seedRepo, "config", "user.name", "seed")
+	runGitInTest(t, seedRepo, "config", "user.email", "seed@example.com")
+	if err := os.MkdirAll(filepath.Join(seedRepo, "noop"), 0o755); err != nil {
+		t.Fatalf("mkdir noop: %v", err)
+	}
+	body := []byte("identical")
+	if err := os.WriteFile(filepath.Join(seedRepo, "noop", "SKILL.md"), body, 0o644); err != nil {
+		t.Fatalf("write seed: %v", err)
+	}
+	runGitInTest(t, seedRepo, "add", "noop/SKILL.md")
+	runGitInTest(t, seedRepo, "commit", "-m", "seed")
+	runGitInTest(t, seedRepo, "push", "-u", "origin", "main")
+
+	bin, _ := stubGH(t, []map[string]any{
+		{"key": "auth setup-git", "body": ""},
+		{"key": "GET user", "body": map[string]any{"login": "tester"}},
+		{"key": "GET repos/x/y/git/ref/heads/main", "body": map[string]any{
+			"object": map[string]any{"sha": "deadbeef"},
+		}},
+	})
+
+	var (
+		mu     sync.Mutex
+		status []string
+	)
+	c := &Client{
+		GH:            bin,
+		Repo:          "x/y",
+		DefaultBranch: "main",
+		HTTPSURL:      remote,
+		OnStatus: func(msg string) {
+			mu.Lock()
+			defer mu.Unlock()
+			status = append(status, msg)
+		},
+	}
+	// Push the SAME content again — `git status --porcelain` will be empty,
+	// PushTreeViaGit must short-circuit before firing OnStatus.
+	err := c.PushTreeViaGit(context.Background(),
+		map[string][]byte{"noop/SKILL.md": body}, "noop")
+	if err != nil {
+		t.Fatalf("PushTreeViaGit: %v", err)
+	}
+	if len(status) != 0 {
+		t.Fatalf("OnStatus fired %d time(s) on a no-op push: %v", len(status), status)
+	}
+}
+
+// TestPushTreeViaGitEmitsPushingStatus is the counterpoint to the no-op test:
+// a real push MUST fire OnStatus("pushing to github…") exactly once.
+func TestPushTreeViaGitEmitsPushingStatus(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git not available")
 	}
@@ -478,16 +581,27 @@ func TestPushTreeViaGitRejectsTraversal(t *testing.T) {
 		{"key": "GET user", "body": map[string]any{"login": "tester"}},
 		{"key": "GET repos/x/y/git/ref/heads/main", "body": "HTTP 404: not found", "exit": 1},
 	})
+	var (
+		mu     sync.Mutex
+		status []string
+	)
 	c := &Client{
 		GH:            bin,
 		Repo:          "x/y",
 		DefaultBranch: "main",
 		HTTPSURL:      initBareRemote(t),
+		OnStatus: func(msg string) {
+			mu.Lock()
+			defer mu.Unlock()
+			status = append(status, msg)
+		},
 	}
-	err := c.PushTreeViaGit(context.Background(),
-		map[string][]byte{"../escape.md": []byte("bad")}, "init")
-	if err == nil {
-		t.Fatalf("expected traversal rejection")
+	if err := c.PushTreeViaGit(context.Background(),
+		map[string][]byte{"a/SKILL.md": []byte("a")}, "init"); err != nil {
+		t.Fatalf("PushTreeViaGit: %v", err)
+	}
+	if len(status) != 1 || !strings.Contains(status[0], "pushing") {
+		t.Fatalf("expected exactly one 'pushing…' status, got: %v", status)
 	}
 }
 
