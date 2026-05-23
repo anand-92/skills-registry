@@ -82,7 +82,8 @@ Go's naming conventions are part of the language culture and are enforced by
 | Receivers | 1–2 letter abbreviation of the type | `func (c *Client) Get(...)`, `func (m model) Update(...)` |
 | Constants | `PascalCase` (or `UPPER_CASE` only when mirroring an env var) | `DefaultBranch`, `MaxRetries` |
 
-Run `gofmt -l ./...` from `cli/` — output must be empty. Run `go vet ./...`
+Run `gofmt -l .` from `cli/` — output must be empty. Run `go vet ./...`
+to catch shadowed identifiers and other naming-adjacent issues.
 to catch shadowed identifiers and other naming-adjacent issues.
 
 When you introduce a new construct that doesn't fit the table above, either
