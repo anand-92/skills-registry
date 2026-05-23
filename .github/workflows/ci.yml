@@ -46,5 +46,13 @@ jobs:
 
       - run: go mod download
       - run: go vet ./...
+      - name: Check gofmt formatting
+        run: |
+          out=$(gofmt -l .)
+          if [ -n "$out" ]; then
+            echo "::error::gofmt found unformatted files:"
+            echo "$out"
+            exit 1
+          fi
       - run: go build ./...
       - run: go test ./...
