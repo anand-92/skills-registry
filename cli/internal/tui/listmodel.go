@@ -75,8 +75,10 @@ type downloadDoneMsg struct {
 	err    error
 }
 
+// sparkleTick paces the header / footer animations. 600ms is slow enough that
+// the chrome reads as "alive" without strobing while a user is reading rows.
 func sparkleTick() tea.Cmd {
-	return tea.Tick(180*time.Millisecond, func(time.Time) tea.Msg { return sparkleTickMsg{} })
+	return tea.Tick(600*time.Millisecond, func(time.Time) tea.Msg { return sparkleTickMsg{} })
 }
 
 func revealTick() tea.Cmd {
@@ -160,7 +162,11 @@ func NewList(ctx context.Context, repo string, loader RowLoader, downloader Down
 	l.SetFilteringEnabled(true)
 	l.SetShowPagination(true)
 	l.DisableQuitKeybindings()
-	l.FilterInput.Prompt = "filter · "
+	// The header indicator already surfaces the active filter ("filter: foo ·
+	// 23 / 91 shown"); the bubbles built-in filter row inside the panel just
+	// duplicates that. Keep only the typing affordance (cursor + text) so
+	// users still see what they're typing while filtering.
+	l.FilterInput.Prompt = "/"
 	l.FilterInput.PromptStyle = lipgloss.NewStyle().Foreground(ColPink).Bold(true)
 	l.FilterInput.TextStyle = lipgloss.NewStyle().Foreground(ColAccent)
 	l.FilterInput.Cursor.Style = lipgloss.NewStyle().Foreground(ColPrimary)
@@ -555,7 +561,16 @@ func (m ListModel) renderPreviewPanel() string {
 		body = EmptyHint.Render("No skill selected.\n\nUse ↑/↓ to move,\n/ to filter,\nenter to download a skill.")
 	} else {
 		title := PreviewTitle.Render(row.Title())
-		slug := PreviewSlug.Render(row.Slug)
+		// Slug line only adds info when the slug isn't just a trivial
+		// normalization of the name. Suppress on either exact match or when
+		// the only difference is hyphens→underscores+lowercase (the normal
+		// Slugify output). The download path under the CTA already shows the
+		// slug, so this line would otherwise read like a stutter under the
+		// title.
+		slugLine := ""
+		if row.Slug != "" && !slugMatchesName(row.Slug, row.Name) {
+			slugLine = PreviewSlug.Render("slug · " + row.Slug)
+		}
 		desc := row.Desc
 		if desc == "" {
 			desc = lipgloss.NewStyle().Foreground(ColMuted).Italic(true).Render("(no description)")
@@ -567,30 +582,36 @@ func (m ListModel) renderPreviewPanel() string {
 		var hint string
 		switch m.rowState[row.Slug] {
 		case StatusDownloading:
-			hint = lipgloss.NewStyle().Foreground(ColYellow).Render("⟳ downloading → ") +
+			hint = lipgloss.NewStyle().Foreground(ColYellow).Bold(true).Render("⟳ downloading") +
+				lipgloss.NewStyle().Foreground(ColMuted).Render(" → ") +
 				lipgloss.NewStyle().Foreground(ColPeach).Italic(true).Render(dest)
 		case StatusDone:
 			saved := dest
 			if path, ok := m.rowDest[row.Slug]; ok && path != "" {
 				saved = path
 			}
-			hint = lipgloss.NewStyle().Foreground(ColAccent).Render("✓ saved to ") +
+			hint = lipgloss.NewStyle().Foreground(ColAccent).Bold(true).Render("✓ saved") +
+				lipgloss.NewStyle().Foreground(ColMuted).Render(" → ") +
 				lipgloss.NewStyle().Foreground(ColPeach).Italic(true).Render(saved)
 		case StatusErr:
-			hint = lipgloss.NewStyle().Foreground(ColDanger).Render("✗ failed: ") +
+			hint = lipgloss.NewStyle().Foreground(ColDanger).Bold(true).Render("✗ failed") +
+				lipgloss.NewStyle().Foreground(ColMuted).Render(" — ") +
 				lipgloss.NewStyle().Foreground(ColInk).Render(m.rowErr[row.Slug].Error())
 		default:
-			hint = lipgloss.NewStyle().Foreground(ColMuted).Render("press ") +
-				KeyStyle.Render("enter") +
-				lipgloss.NewStyle().Foreground(ColMuted).Render(" to download → ") +
+			// CTA: an actual keycap chip + arrow + target path. Reads as a
+			// button rather than a sentence.
+			hint = DownloadChip.Render("⏎ enter") +
+				lipgloss.NewStyle().Foreground(ColMuted).Render("  download → ") +
 				lipgloss.NewStyle().Foreground(ColPeach).Italic(true).Render(dest)
 		}
 
 		meta := PreviewMeta.Render("registry · " + m.repo)
 
-		body = lipgloss.JoinVertical(lipgloss.Left,
-			title,
-			slug,
+		blocks := []string{title}
+		if slugLine != "" {
+			blocks = append(blocks, slugLine)
+		}
+		blocks = append(blocks,
 			"",
 			descBlock,
 			"",
@@ -600,6 +621,7 @@ func (m ListModel) renderPreviewPanel() string {
 			"",
 			hint,
 		)
+		body = lipgloss.JoinVertical(lipgloss.Left, blocks...)
 	}
 
 	// Pin the preview to the panel height so the box doesn't shrink as items
@@ -646,14 +668,16 @@ func (m ListModel) renderLoading() string {
 
 	line := lipgloss.JoinHorizontal(lipgloss.Center,
 		m.spinner.View(), " ",
-		lipgloss.NewStyle().Foreground(ColInk).Render("Connecting to "),
+		lipgloss.NewStyle().Foreground(ColInk).Render("Fetching skills from "),
 		lipgloss.NewStyle().Foreground(ColPrimary).Bold(true).Render(m.repo),
 		lipgloss.NewStyle().Foreground(ColInk).Render(" …"),
 	)
+	url := lipgloss.NewStyle().Foreground(ColMuted).Italic(true).
+		Render("github.com/" + m.repo)
 	tip := SubtitleStyle.Render("Press q to abort.")
 
 	gradient := miniGradientBar(40, m.sparkleIdx)
-	body := lipgloss.JoinVertical(lipgloss.Center, hero, "", gradient, "", line, "", tip)
+	body := lipgloss.JoinVertical(lipgloss.Center, hero, "", gradient, "", line, url, "", tip)
 	if m.width <= 0 || m.height <= 0 {
 		return body
 	}
@@ -717,12 +741,36 @@ func (m ListModel) renderHelp() string {
 // Helpers
 // ────────────────────────────────────────────────────────────────────────────
 
-var sparkleCycle = []rune{'✦', '✧', '⋆', '✨', '⊹', '∗'}
+// slugMatchesName returns true when slug is the canonical Slugify(name)
+// — i.e. the slug carries no information the title doesn't. The slugifier
+// lower-cases, collapses runs of non-alnum chars to a single "_", and trims
+// stray underscores; replicate that locally so the TUI package doesn't have
+// to import internal/scan.
+func slugMatchesName(slug, name string) bool {
+	if slug == "" || name == "" {
+		return slug == name
+	}
+	var b strings.Builder
+	lastUnder := false
+	for _, r := range strings.ToLower(strings.TrimSpace(name)) {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+			lastUnder = false
+		} else if !lastUnder {
+			b.WriteByte('_')
+			lastUnder = true
+		}
+	}
+	canon := strings.Trim(b.String(), "_")
+	return canon == slug
+}
 
+// Stable sparkle pair. The original version cycled through six glyphs every
+// ~180ms, which read as flickering chrome while a user was reading rows. The
+// gradient bar in the preview pane plus the footer dots already convey "this
+// thing is alive"; the title sparkles can be still.
 func (m ListModel) sparkleChars() (rune, rune) {
-	a := sparkleCycle[m.sparkleIdx%len(sparkleCycle)]
-	b := sparkleCycle[(m.sparkleIdx+3)%len(sparkleCycle)]
-	return a, b
+	return '✦', '✧'
 }
 
 func (m ListModel) visibleCount() int {
@@ -856,17 +904,20 @@ func (d skillDelegate) Render(w io.Writer, m list.Model, index int, item list.It
 		width = 40
 	}
 
-	bullet := d.normalBullet.Render(" ✧")
+	// Bullet markers are the same display width (3 cells: glyph + glyph +
+	// trailing space) on selected and unselected rows so titles don't
+	// jitter horizontally as the cursor moves.
+	bullet := d.normalBullet.Render("· ✧")
 	title := d.normalTitle
 	desc := d.normalDesc
 	slug := d.slug
-	bar := "  "
+	bar := d.normalBullet.Render(" · ")
 	if selected {
 		bullet = d.selectedBullet.Render("▸ ✦")
 		title = d.selectedTitle
 		desc = d.selectedDesc
 		slug = d.selectedSlug
-		bar = d.cursorBar.Render("│ ")
+		bar = d.cursorBar.Render(" │ ")
 	}
 
 	// Per-row download status badge, if any. The map's zero value ("") covers
@@ -876,20 +927,48 @@ func (d skillDelegate) Render(w io.Writer, m list.Model, index int, item list.It
 		badge = d.statusBadges[d.statusOf(row.Slug)]
 	}
 
-	titleText := truncate(row.Title(), width-14)
-	slugText := truncate(row.Slug, max(16, width/3))
+	// Only render the right-side slug column when it adds information — i.e.
+	// when the slug isn't just the canonical Slugify(name). When they
+	// effectively match, the column is pure noise (the title already says it).
+	//
+	// Budget math has to be done with the slug in mind: leftLine is
+	//   bullet(3) + " "(1) + title(titleBudget) + badge(0 or 2)
+	// rightLine is
+	//   slug(slugBudget)
+	// plus at least one space of gap between them. Reserving 7 cells
+	// (4 for bullet+space, 2 for the badge slot, 1 for the gap) keeps the
+	// row inside the list width regardless of badge state, so a row doesn't
+	// reflow when a download badge appears.
+	showSlug := row.Slug != "" && row.Name != "" && !slugMatchesName(row.Slug, row.Name)
+	slugBudget := 0
+	titleBudget := width - 6
+	if showSlug {
+		slugBudget = max(16, width/3)
+		if slugBudget > width-7 {
+			slugBudget = max(0, width-7)
+		}
+		titleBudget = width - slugBudget - 7
+		if titleBudget < 1 {
+			titleBudget = 1
+		}
+	}
+	titleText := truncate(row.Title(), titleBudget)
 	descText := truncate(strings.ReplaceAll(row.Desc, "\n", " "), width-6)
 
 	// Line 1: bullet + title (left), faint slug (right) — gap-filled so the
 	// slug right-aligns when there's room. The badge sits between the title
 	// and the slug.
 	leftLine := bullet + " " + title.Render(titleText) + badge
-	rightLine := slug.Render(slugText)
-	gap := width - lipgloss.Width(leftLine) - lipgloss.Width(rightLine)
-	if gap < 1 {
-		gap = 1
+	line1 := leftLine
+	if showSlug && slugBudget > 0 {
+		slugText := truncate(row.Slug, slugBudget)
+		rightLine := slug.Render(slugText)
+		gap := width - lipgloss.Width(leftLine) - lipgloss.Width(rightLine)
+		if gap < 1 {
+			gap = 1
+		}
+		line1 = leftLine + strings.Repeat(" ", gap) + rightLine
 	}
-	line1 := leftLine + strings.Repeat(" ", gap) + rightLine
 
 	// Line 2: cursor bar + description.
 	line2 := bar + desc.Render(descText)

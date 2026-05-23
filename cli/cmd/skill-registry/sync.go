@@ -81,10 +81,12 @@ func runSync(ctx context.Context, yes, all bool) error {
 	}
 
 	if !yes && !all {
-		fmt.Printf("\nAbout to push %d skill(s) to %s. Continue? [Y/n] ", len(picked), cfg.Repo)
-		var resp string
-		_, _ = fmt.Scanln(&resp)
-		if resp != "" && resp != "y" && resp != "Y" {
+		ok, err := confirmPush(fmt.Sprintf(
+			"Push %d skill(s) to %s?", len(picked), cfg.Repo))
+		if err != nil {
+			return err
+		}
+		if !ok {
 			fmt.Println("Aborted.")
 			return nil
 		}
@@ -109,6 +111,28 @@ func runSync(ctx context.Context, yes, all bool) error {
 		fmt.Println(tui.OkStyle.Render("✓"), sk.Slug)
 	}
 	return nil
+}
+
+// confirmPush is the shared yes/no confirmation prompt used by `sync` and
+// `add` before any registry write. Returns true when the user picks "yes"
+// (or hits enter on the default), false on explicit "no" or esc. Replaces
+// the older `fmt.Scanln`-based prompt so cancellation/SIGINT behaves like
+// every other prompt in the CLI.
+func confirmPush(title string) (bool, error) {
+	choices := []tui.Choice{
+		{Value: "yes", Label: "Yes, push", Hint: "Continue with the registry write"},
+		{Value: "no", Label: "Cancel", Hint: "Make no changes"},
+	}
+	model := tui.NewChoice(title, "Nothing local is touched — only the registry repo is updated.", choices)
+	out, err := tea.NewProgram(model).Run()
+	if err != nil {
+		return false, err
+	}
+	final := out.(tui.ChoiceModel)
+	if final.Cancelled() || final.Value() == nil {
+		return false, nil
+	}
+	return final.Value().(string) == "yes", nil
 }
 
 func promptSync(missing []scan.Skill) ([]scan.Skill, error) {

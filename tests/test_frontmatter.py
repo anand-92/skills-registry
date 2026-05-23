@@ -69,3 +69,69 @@ def test_empty_string_input() -> None:
 	meta, body = parse_frontmatter("")
 	assert meta == {}
 	assert body == ""
+
+
+def test_folded_block_scalar_description() -> None:
+	# YAML "folded" scalar: newlines become spaces, blank lines become paragraph breaks.
+	# This is the common SKILL.md pattern we were silently dropping before.
+	text = (
+		"---\n"
+		"name: my-skill\n"
+		"description: >\n"
+		"  Build terminal UIs with Charmbracelet (Bubble Tea, Lip Gloss).\n"
+		"  Use when: Go TUI, shell prompts/spinners.\n"
+		"---\n"
+		"body"
+	)
+	meta, _ = parse_frontmatter(text)
+	assert meta["name"] == "my-skill"
+	assert meta["description"] == (
+		"Build terminal UIs with Charmbracelet (Bubble Tea, Lip Gloss). "
+		"Use when: Go TUI, shell prompts/spinners."
+	)
+
+
+def test_folded_strip_block_scalar() -> None:
+	# ">-" strips trailing newline; for our purposes it matches ">".
+	text = "---\ndescription: >-\n  Hello world.\n  Second line.\n---\nbody"
+	meta, _ = parse_frontmatter(text)
+	assert meta["description"] == "Hello world. Second line."
+
+
+def test_literal_block_scalar_preserves_newlines() -> None:
+	text = "---\ndescription: |\n  line one\n  line two\n---\nbody"
+	meta, _ = parse_frontmatter(text)
+	assert meta["description"] == "line one\nline two"
+
+
+def test_block_scalar_marker_alone_not_stored_as_value() -> None:
+	# Regression: the old parser stored ">" verbatim as the description, so
+	# the registry listing rendered "> " for every skill that used the folded
+	# YAML scalar pattern.
+	text = "---\ndescription: >\n  Some real description here.\n---\nbody"
+	meta, _ = parse_frontmatter(text)
+	assert meta["description"] != ">"
+	assert "Some real description here." in meta["description"]
+
+
+def test_block_scalar_with_inline_comment() -> None:
+	# YAML lets you stick a comment on the indicator line itself. The
+	# previous version required an exact match against the marker set so a
+	# trailing comment hid the block from us.
+	text = (
+		"---\n"
+		"description: > # short label\n"
+		"  Real description here that spans\n"
+		"  multiple lines.\n"
+		"---\n"
+		"body"
+	)
+	meta, _ = parse_frontmatter(text)
+	assert meta["description"] == "Real description here that spans multiple lines."
+
+
+def test_block_scalar_followed_by_next_key() -> None:
+	text = "---\ndescription: >\n  Two-line\n  description.\nname: my-skill\n---\nbody"
+	meta, _ = parse_frontmatter(text)
+	assert meta["description"] == "Two-line description."
+	assert meta["name"] == "my-skill"

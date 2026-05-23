@@ -43,9 +43,11 @@ func runGet(ctx context.Context, slug, dest string) error {
 		return err
 	}
 	if reused != "" {
-		fmt.Println(tui.HintStyle.Render("!"), "reusing existing folder", reused)
+		fmt.Println(tui.HintStyle.Render("!  reusing existing folder"), tui.PreviewSlug.Render(reused))
 	}
-	fmt.Println(tui.OkStyle.Render("✓"), "wrote skill to", finalDest)
+	// Two-line output: a chip-style header and a faint path on the next line
+	// so the destination stands on its own and can be copy-pasted cleanly.
+	fmt.Println(tui.OkStyle.Render("✓  saved"), tui.HintStyle.Render("→"), tui.PreviewSlug.Render(finalDest))
 	return nil
 }
 

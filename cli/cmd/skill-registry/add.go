@@ -78,11 +78,12 @@ func runAdd(ctx context.Context, source string, yes, all bool) error {
 	}
 
 	if !yes && !all {
-		fmt.Printf("\nAbout to publish %d skill(s) from %s to %s. Continue? [Y/n] ",
-			len(picked), source, cfg.Repo)
-		var resp string
-		_, _ = fmt.Scanln(&resp)
-		if resp != "" && resp != "y" && resp != "Y" {
+		ok, err := confirmPush(fmt.Sprintf(
+			"Publish %d skill(s) from %s to %s?", len(picked), source, cfg.Repo))
+		if err != nil {
+			return err
+		}
+		if !ok {
 			fmt.Println("Aborted.")
 			return nil
 		}

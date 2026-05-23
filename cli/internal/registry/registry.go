@@ -1001,6 +1001,11 @@ func parseStatus(body string) int {
 
 // parseSummary extracts the skill display name + description from SKILL.md
 // frontmatter. Falls back to the slug + first paragraph.
+//
+// Mirrors src/skills_mcp/frontmatter.py: handles flat “key: value“ lines
+// AND YAML block scalars (“>“, “>-“, “|“, “|-“) — many SKILL.md files
+// use the folded form for descriptions, and the previous version stored the
+// indicator character ("> " / ">-") verbatim as the description.
 func parseSummary(text, slug string) (string, string) {
 	name := slug
 	description := ""
@@ -1014,23 +1019,12 @@ func parseSummary(text, slug string) (string, string) {
 			}
 		}
 		if end > 0 {
-			for _, raw := range lines[1:end] {
-				if !strings.Contains(raw, ":") || strings.HasPrefix(strings.TrimSpace(raw), "#") {
-					continue
-				}
-				k, v, _ := strings.Cut(raw, ":")
-				key := strings.TrimSpace(k)
-				val := strings.Trim(strings.TrimSpace(v), "'\"")
-				switch key {
-				case "name":
-					if val != "" {
-						name = val
-					}
-				case "description":
-					if val != "" {
-						description = val
-					}
-				}
+			meta := parseFlatYAML(lines[1:end])
+			if v := meta["name"]; v != "" {
+				name = v
+			}
+			if v := meta["description"]; v != "" {
+				description = v
 			}
 			if description == "" && end+1 < len(lines) {
 				description = firstParagraph(strings.Join(lines[end+1:], "\n"))
@@ -1047,6 +1041,90 @@ func parseSummary(text, slug string) (string, string) {
 		description = "Skill: " + name
 	}
 	return name, description
+}
+
+// blockScalarMarkers are the YAML scalar indicators that introduce a
+// multi-line value. We don't distinguish keep/strip/clip chomping because the
+// caller folds whitespace later.
+var blockScalarMarkers = map[string]bool{
+	">": true, ">-": true, ">+": true,
+	"|": true, "|-": true, "|+": true,
+}
+
+// parseFlatYAML reads a frontmatter line block and returns the top-level
+// scalar values. Supports “key: value“ and YAML folded/literal block
+// scalars introduced by “>“, “>-“, “|“, “|-“. Nested mappings and
+// sequences are ignored.
+func parseFlatYAML(body []string) map[string]string {
+	out := map[string]string{}
+	i := 0
+	for i < len(body) {
+		raw := body[i]
+		stripped := strings.TrimSpace(raw)
+		if stripped == "" || strings.HasPrefix(stripped, "#") || !strings.Contains(raw, ":") {
+			i++
+			continue
+		}
+		k, v, _ := strings.Cut(raw, ":")
+		key := strings.TrimSpace(k)
+		val := strings.TrimSpace(v)
+
+		// YAML allows an inline comment after the block-scalar indicator
+		// (e.g. "description: > # multi-line"). Compare against the first
+		// whitespace-separated token so the comment doesn't make us miss it.
+		head := val
+		if fields := strings.Fields(val); len(fields) > 0 {
+			head = fields[0]
+		}
+		if blockScalarMarkers[head] {
+			folded := strings.HasPrefix(head, ">")
+			var block []string
+			i++
+			for i < len(body) {
+				peek := body[i]
+				if strings.TrimSpace(peek) == "" {
+					block = append(block, "")
+					i++
+					continue
+				}
+				if !strings.HasPrefix(peek, " ") && !strings.HasPrefix(peek, "\t") {
+					break
+				}
+				block = append(block, strings.TrimSpace(peek))
+				i++
+			}
+			if folded {
+				// Blank line → paragraph break; otherwise join lines with " ".
+				var paragraphs [][]string
+				current := []string{}
+				for _, ln := range block {
+					if ln == "" {
+						if len(current) > 0 {
+							paragraphs = append(paragraphs, current)
+							current = nil
+						}
+						continue
+					}
+					current = append(current, ln)
+				}
+				if len(current) > 0 {
+					paragraphs = append(paragraphs, current)
+				}
+				parts := make([]string, 0, len(paragraphs))
+				for _, p := range paragraphs {
+					parts = append(parts, strings.Join(p, " "))
+				}
+				out[key] = strings.Join(parts, "\n\n")
+			} else {
+				out[key] = strings.TrimRight(strings.Join(block, "\n"), "\n")
+			}
+			continue
+		}
+
+		out[key] = strings.Trim(val, "'\"")
+		i++
+	}
+	return out
 }
 
 func firstParagraph(text string) string {
