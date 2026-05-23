@@ -20,7 +20,7 @@ This file is a living guide for AI agents and new contributors. It captures the 
 - **Package manager (Python):** `uv`
 - **Test runner (Python):** `pytest` with `pytest-cov`
 - **Lint/Format (Python):** `ruff`
-- **Build/Test (Go):** stdlib (`go build`, `go test`, `go vet`)
+- **Build/Test (Go):** stdlib (`go build`, `go test`, `go vet`) + `staticcheck` + `deadcode` for dead-code / unused-symbol detection
 - **TUI library:** Charmbracelet (bubbletea + lipgloss + bubbles + cobra)
 - **MCP transport:** stdio via FastMCP 3.x
 - **Network surface:**
@@ -159,8 +159,9 @@ Force-pushes and any subtree change correctly invalidate.
 - Run everything:
   ```bash
   uv run pytest -v --cov=skills_mcp --cov-report=term-missing
-  (cd cli && go vet ./... && go test ./...)
+  (cd cli && go vet ./... && staticcheck ./... && deadcode -test ./... && go test ./...)
   ```
+- **Dead-code detection (Go):** CI runs `staticcheck ./...` (scoped via `cli/staticcheck.conf` to disable the noisy `ST*`/`QF*` style families while keeping every unused-symbol/correctness check) plus `deadcode -test ./...` for reachability-based unused-function analysis. Both must be green to merge. Install locally with `go install honnef.co/go/tools/cmd/staticcheck@2025.1.1` and `go install golang.org/x/tools/cmd/deadcode@latest`.
 
 ---
 
@@ -182,9 +183,9 @@ Force-pushes and any subtree change correctly invalidate.
 
 ## CI / CD
 
-- `.github/workflows/ci.yml` — runs the Python job (ruff lint + format + pytest with coverage) **and** the Go job (vet + build + test) in parallel on every push/PR. Both must be green to merge.
+- `.github/workflows/ci.yml` — runs the Python job (ruff lint + format + pytest with coverage) **and** the Go job (vet + staticcheck + deadcode + build + test) in parallel on every push/PR. Both must be green to merge.
 - `.github/workflows/release.yml` — **auto-releases on every push to `main` that touches `src/`, `cli/`, `tests/`, or `pyproject.toml`**. The path filter is the release decision; commits that only touch docs, workflow files, or other non-source paths do not release.
-  1. Tests gate (ruff + pytest + go vet + go test) — must pass.
+  1. Tests gate (ruff + pytest + go vet + staticcheck + deadcode + go test) — must pass.
   2. Tag job computes the next semver from the latest `vX.Y.Z` tag, then pushes a lightweight tag on the triggering commit. CI never commits version bumps back to `main`.
   3. Python package version is dynamic via `hatch-vcs`; building from the release tag produces the matching wheel/sdist version.
   4. Builds the Python wheel + sdist (`uv build`) and the Go CLI for `darwin/amd64`, `darwin/arm64`, `linux/amd64`, `linux/arm64`, `windows/amd64`.
@@ -218,6 +219,11 @@ uv sync --group dev
 # Run all tests (Python + Go)
 uv run pytest -v --cov=skills_mcp --cov-report=term-missing
 (cd cli && go vet ./... && go test ./...)
+
+# Dead-code detection (Go)
+go install honnef.co/go/tools/cmd/staticcheck@2025.1.1
+go install golang.org/x/tools/cmd/deadcode@latest
+(cd cli && staticcheck ./... && deadcode -test ./...)
 
 # Lint & format Python
 uv run ruff check .

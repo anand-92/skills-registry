@@ -64,7 +64,6 @@ func Slugify(name string) string {
 
 // DiscoverSources returns every known skill-bearing directory under $HOME and cwd.
 func DiscoverSources(home, cwd string, extra []string, dotDirs []string) []Source {
-	type seen struct{ abs string }
 	want := map[string]struct{}{}
 
 	bases := []struct {
@@ -110,7 +109,6 @@ func DiscoverSources(home, cwd string, extra []string, dotDirs []string) []Sourc
 		want[abs] = struct{}{}
 		sources = append(sources, Source{Path: abs, Label: e})
 	}
-	_ = seen{}
 	return sources
 }
 
