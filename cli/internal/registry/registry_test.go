@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -490,20 +491,32 @@ func TestPushTreeViaGitRejectsTraversal(t *testing.T) {
 	}
 }
 
-// TestPushTreeViaGitGitMissing simulates a host without git on PATH by
-// pointing GitBin at a non-existent file.
+// TestPushTreeViaGitGitMissing simulates a host without a usable git binary
+// by pointing GitBin at a non-existent file. The gh stub is fully populated
+// so execution reaches the first `git` subprocess; we then expect an error
+// from the missing binary itself (not from upstream gh plumbing).
 func TestPushTreeViaGitGitMissing(t *testing.T) {
-	bin, _ := stubGH(t, []map[string]any{})
+	bin, _ := stubGH(t, []map[string]any{
+		{"key": "auth setup-git", "body": ""},
+		{"key": "GET user", "body": map[string]any{"login": "tester"}},
+		{"key": "GET repos/x/y/git/ref/heads/main", "body": "HTTP 404: not found", "exit": 1},
+	})
 	c := &Client{
 		GH:            bin,
 		Repo:          "x/y",
 		DefaultBranch: "main",
 		GitBin:        "/nonexistent/git-binary",
+		HTTPSURL:      initBareRemote(t),
 	}
-	// Need a non-empty files map to reach the git binary lookup.
 	err := c.PushTreeViaGit(context.Background(),
 		map[string][]byte{"a/SKILL.md": []byte("a")}, "init")
 	if err == nil {
 		t.Fatalf("expected error when git binary doesn't exist")
+	}
+	// Sanity-check that we got past the gh plumbing (setupGitAuth / gitAuthor
+	// / refExists) and tripped on the missing git binary itself.
+	msg := err.Error()
+	if !strings.Contains(msg, "git ") {
+		t.Fatalf("expected error from git subprocess, got: %v", err)
 	}
 }
