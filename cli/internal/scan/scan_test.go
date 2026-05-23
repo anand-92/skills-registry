@@ -201,6 +201,29 @@ func TestEntriesForCleanup_RealDirRequiresSkillMd(t *testing.T) {
 	}
 }
 
+func TestEntriesForCleanup_MatchesSlugifiedFolderName(t *testing.T) {
+	// Slugify normalizes hyphens (and any non-[a-z0-9]) to underscores, so
+	// the on-disk folder name and the registry slug usually differ for any
+	// skill with a hyphenated name. A literal-name lookup against the
+	// registry's slug set would miss every such skill — i.e. the cleanup
+	// would do nothing for the most common naming convention.
+	tmp := t.TempDir()
+	skillsDir := filepath.Join(tmp, ".factory", "skills")
+	writeSkill(t, skillsDir, "agp-9-upgrade",
+		"---\nname: agp-9-upgrade\n---\n")
+	writeSkill(t, skillsDir, "perfetto-sql",
+		"---\nname: perfetto-sql\n---\n")
+	sources := []Source{{Path: skillsDir, Label: "~/.factory/skills"}}
+	registrySlugs := map[string]struct{}{
+		"agp_9_upgrade": {},
+		"perfetto_sql":  {},
+	}
+	entries := EntriesForCleanup(sources, registrySlugs)
+	if len(entries) != 2 {
+		t.Fatalf("expected 2 entries (slugified match), got %d: %+v", len(entries), entries)
+	}
+}
+
 func TestEntriesForCleanup_SkipsDotfiles(t *testing.T) {
 	tmp := t.TempDir()
 	skillsDir := filepath.Join(tmp, ".factory", "skills")

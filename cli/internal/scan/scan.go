@@ -268,10 +268,12 @@ type CleanupEntry struct {
 // every coding agent re-reads each session.
 //
 // Rules:
-//   - Skip entries whose name doesn't match a slug in `registrySlugs`.
 //   - Skip the literal name "skill-registry" (that's our SKILL.md install
-//     target, written by bootstrap.InstallSkillMd).
-//   - Skip dotfiles (.DS_Store, etc).
+//     target, written by bootstrap.InstallSkillMd) and dotfiles (.DS_Store).
+//   - Match by literal name OR Slugify(name): folder names on disk often
+//     contain hyphens (e.g. "agp-9-upgrade"), but Slugify normalizes those
+//     to underscores ("agp_9_upgrade") and the registry stores skills under
+//     the slug. Direct name-equality alone would miss every hyphenated skill.
 //   - Real directories must contain a sibling SKILL.md to be eligible; this
 //     protects against accidentally deleting unrelated content that happens
 //     to share a name with a slug.
@@ -294,7 +296,9 @@ func EntriesForCleanup(sources []Source, registrySlugs map[string]struct{}) []Cl
 				continue
 			}
 			if _, ok := registrySlugs[name]; !ok {
-				continue
+				if _, ok := registrySlugs[Slugify(name)]; !ok {
+					continue
+				}
 			}
 			full := filepath.Join(src.Path, name)
 			isSymlink := e.Type()&os.ModeSymlink != 0
