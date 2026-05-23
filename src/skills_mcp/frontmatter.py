@@ -1,19 +1,28 @@
 """Shared SKILL.md frontmatter helpers.
 
 Used by :mod:`skills_mcp.registry_api` when summarizing registry entries.
-The parser is intentionally minimal (flat ``key: value`` only) so we avoid
-adding PyYAML as a runtime dependency.
+The parser is intentionally minimal (flat ``key: value`` plus block-scalar
+continuations) so we avoid adding PyYAML as a runtime dependency.
 """
 
 from __future__ import annotations
 
+# YAML block-scalar indicators that introduce a multi-line value:
+#   >    folded (newlines → spaces)
+#   >-   folded, strip trailing newline
+#   |    literal (preserve newlines)
+#   |-   literal, strip trailing newline
+# We treat ``+`` chomping the same as the default — we collapse via splitlines
+# downstream, so trailing-newline behaviour is irrelevant.
+_BLOCK_SCALAR_MARKERS = {">", ">-", ">+", "|", "|-", "|+"}
+
 
 def parse_frontmatter(text: str) -> tuple[dict[str, str], str]:
-	"""Extract a flat YAML-ish frontmatter block (``--- ... ---``) from the top of a file.
+	"""Extract a YAML-ish frontmatter block (``--- ... ---``) from the top of a file.
 
-	Multi-line values, lists, and nested keys are not supported and will be
-	silently dropped — this matches the constraint documented in the Go
-	scanner's frontmatter helper.
+	Supports flat ``key: value`` pairs and YAML block scalars introduced by
+	``>``, ``>-``, ``|``, or ``|-`` (subsequent indented lines are folded into
+	a single value). Lists and nested mappings are still ignored.
 	"""
 	if not text.startswith("---"):
 		return {}, text
@@ -25,11 +34,56 @@ def parse_frontmatter(text: str) -> tuple[dict[str, str], str]:
 			break
 	if end is None:
 		return {}, text
+
 	meta: dict[str, str] = {}
-	for raw in lines[1:end]:
-		if ":" in raw and not raw.lstrip().startswith("#"):
-			k, v = raw.split(":", 1)
-			meta[k.strip()] = v.strip().strip('"').strip("'")
+	body_lines = lines[1:end]
+	i = 0
+	while i < len(body_lines):
+		raw = body_lines[i]
+		stripped = raw.lstrip()
+		if not stripped or stripped.startswith("#") or ":" not in raw:
+			i += 1
+			continue
+		k, v = raw.split(":", 1)
+		key = k.strip()
+		value_text = v.strip()
+
+		if value_text in _BLOCK_SCALAR_MARKERS:
+			# Collect subsequent indented (or blank) lines as the block value.
+			# Indentation rules: any line indented past column 0 belongs to the
+			# block, blank lines are paragraph breaks. We stop at the first
+			# zero-indent non-blank line.
+			folded = value_text.startswith(">")
+			block_lines: list[str] = []
+			i += 1
+			while i < len(body_lines):
+				peek = body_lines[i]
+				if peek.strip() == "":
+					block_lines.append("")
+					i += 1
+					continue
+				if not peek.startswith((" ", "\t")):
+					break
+				block_lines.append(peek.strip())
+				i += 1
+			if folded:
+				# Fold: blank line → paragraph break (\n\n), otherwise join with " ".
+				paragraphs: list[list[str]] = [[]]
+				for ln in block_lines:
+					if ln == "":
+						if paragraphs[-1]:
+							paragraphs.append([])
+					else:
+						paragraphs[-1].append(ln)
+				value = "\n\n".join(" ".join(p) for p in paragraphs if p)
+			else:
+				value = "\n".join(block_lines).rstrip("\n")
+			meta[key] = value
+			continue
+
+		meta[key] = value_text.strip('"').strip("'")
+		i += 1
+
 	body = "\n".join(lines[end + 1 :]).lstrip("\n")
 	return meta, body
 

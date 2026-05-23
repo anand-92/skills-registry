@@ -228,6 +228,34 @@ func TestEnter_NoOpWithoutDownloader(t *testing.T) {
 	}
 }
 
+// TestSlugMatchesName pins the suppression rule used by both the preview
+// "slug · …" line and the list-row right column. Anything that's just the
+// canonical Slugify of the title is treated as redundant and hidden.
+func TestSlugMatchesName(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		slug string
+		want bool
+	}{
+		{"adaptive", "adaptive", true},
+		{"camera1-to-camerax", "camera1_to_camerax", true},
+		{"My Skill", "my_skill", true},
+		{"agent-platform-skill-registry", "agent_platform_skill_registry", true},
+		// Genuinely different — slug was overridden or stored differently.
+		{"camera1-to-camerax", "cam1", false},
+		// Empty cases.
+		{"", "", true},
+		{"foo", "", false},
+		{"", "foo", false},
+	} {
+		t.Run(tc.name+"_"+tc.slug, func(t *testing.T) {
+			if got := slugMatchesName(tc.slug, tc.name); got != tc.want {
+				t.Fatalf("slugMatchesName(%q, %q) = %v, want %v", tc.slug, tc.name, got, tc.want)
+			}
+		})
+	}
+}
+
 // drainForDone walks a tea.Msg that may be a Batch / sequence wrapper and
 // returns the first downloadDoneMsg found.
 func drainForDone(msg tea.Msg) (downloadDoneMsg, bool) {

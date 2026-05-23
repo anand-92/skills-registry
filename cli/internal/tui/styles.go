@@ -135,4 +135,13 @@ var (
 			Italic(true).
 			Align(lipgloss.Center).
 			Padding(2, 4)
+
+	// Chip used for the "press enter to download" CTA in the preview pane.
+	// Sits on a muted background so the keycap pops on both light and dark
+	// terminals without screaming for attention.
+	DownloadChip = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color("#FFFDF5")).
+			Background(ColPrimary).
+			Padding(0, 1)
 )

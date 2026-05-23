@@ -605,6 +605,59 @@ func TestPushTreeViaGitEmitsPushingStatus(t *testing.T) {
 	}
 }
 
+// TestParseSummary_FoldedBlockScalarDescription verifies that the SKILL.md
+// summarizer reads the common YAML folded-scalar (``>``) and literal (``|``)
+// descriptions instead of storing the indicator character verbatim. The
+// previous parser silently dropped the multi-line continuation lines and
+// surfaced ">" / ">-" in the list TUI.
+func TestParseSummary_FoldedBlockScalarDescription(t *testing.T) {
+	text := "---\n" +
+		"name: my-skill\n" +
+		"description: >\n" +
+		"  Build terminal UIs with Charmbracelet. Use when:\n" +
+		"  Go TUI, shell prompts/spinners.\n" +
+		"---\n# body"
+	name, desc := parseSummary(text, "my_skill")
+	if name != "my-skill" {
+		t.Fatalf("name = %q, want my-skill", name)
+	}
+	want := "Build terminal UIs with Charmbracelet. Use when: Go TUI, shell prompts/spinners."
+	if desc != want {
+		t.Fatalf("desc = %q, want %q", desc, want)
+	}
+}
+
+func TestParseSummary_FoldedStripBlockScalar(t *testing.T) {
+	text := "---\ndescription: >-\n  Hello world.\n  Second line.\n---\n"
+	_, desc := parseSummary(text, "x")
+	if desc != "Hello world. Second line." {
+		t.Fatalf("desc = %q", desc)
+	}
+}
+
+func TestParseSummary_LiteralBlockScalar(t *testing.T) {
+	text := "---\ndescription: |\n  line one\n  line two\n---\n"
+	_, desc := parseSummary(text, "x")
+	// _parseSummary collapses whitespace; literal scalars therefore end up
+	// space-joined like folded ones for the listing.
+	if desc != "line one line two" {
+		t.Fatalf("desc = %q", desc)
+	}
+}
+
+func TestParseSummary_RegressionMarkerNotStored(t *testing.T) {
+	// The old parser stored ">" / ">-" verbatim as the description; this
+	// regression test pins the new behavior.
+	text := "---\ndescription: >\n  Real text here.\n---\n"
+	_, desc := parseSummary(text, "x")
+	if desc == ">" || desc == ">-" || desc == "" {
+		t.Fatalf("desc unexpectedly = %q (regression)", desc)
+	}
+	if !strings.Contains(desc, "Real text here.") {
+		t.Fatalf("desc lost content: %q", desc)
+	}
+}
+
 // TestPushTreeViaGitGitMissing simulates a host without a usable git binary
 // by pointing GitBin at a non-existent file. The gh stub is fully populated
 // so execution reaches the first `git` subprocess; we then expect an error

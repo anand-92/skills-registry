@@ -89,17 +89,39 @@ func runList(ctx context.Context, query string, plain bool) error {
 	return nil
 }
 
+// printPlainList renders the registry as a fixed-width table. The plain
+// path is used when stdout is piped (so a downstream `grep` / `awk` has
+// stable columns), so the description column is truncated to 80 chars to
+// keep one row per line.
 func printPlainList(repo string, summaries []registry.Summary) {
-	fmt.Printf("Registry: %s (%d skills)\n\n", repo, len(summaries))
-	width := 0
+	fmt.Printf("Registry: %s  (%d skill", repo, len(summaries))
+	if len(summaries) != 1 {
+		fmt.Print("s")
+	}
+	fmt.Println(")")
+	fmt.Println()
+	width := len("SLUG")
 	for _, s := range summaries {
 		if len(s.Slug) > width {
 			width = len(s.Slug)
 		}
 	}
+	pad := func(s string) string {
+		if len(s) >= width {
+			return s
+		}
+		return s + strings.Repeat(" ", width-len(s))
+	}
+	fmt.Printf("  %s  %s\n", pad("SLUG"), "DESCRIPTION")
+	fmt.Printf("  %s  %s\n", strings.Repeat("─", width), strings.Repeat("─", 11))
 	for _, s := range summaries {
-		pad := strings.Repeat(" ", width-len(s.Slug))
-		fmt.Printf("  %s%s  %s\n", s.Slug, pad, s.Description)
+		desc := s.Description
+		// Plain output is meant for piping; clip long descriptions so a
+		// `grep` consumer sees one entry per line without unexpected wraps.
+		if len(desc) > 80 {
+			desc = desc[:79] + "…"
+		}
+		fmt.Printf("  %s  %s\n", pad(s.Slug), desc)
 	}
 }
 
