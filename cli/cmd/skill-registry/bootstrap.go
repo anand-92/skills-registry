@@ -159,9 +159,12 @@ func runBootstrap(ctx context.Context, opts bootstrapOpts) error {
 	// Cleanup needs the *post-push* slug set so we delete every dot-folder
 	// copy / symlink that mirrors a registered skill — not just the one
 	// Discover picked after slug-deduping. Fall back to localSkills if the
-	// listing call fails; at minimum we know those were just pushed.
+	// listing call fails; at minimum we know those were just pushed. Surface
+	// the failure so the user knows cleanup coverage may be partial.
 	registrySlugs, err := client.Slugs(ctx)
 	if err != nil {
+		fmt.Printf("\n%s could not list registry slugs (%v); cleanup scope falls back to just-pushed skills.\n",
+			tui.HintStyle.Render("!"), err)
 		registrySlugs = map[string]struct{}{}
 		for _, s := range localSkills {
 			registrySlugs[s.Slug] = struct{}{}

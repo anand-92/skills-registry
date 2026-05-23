@@ -301,12 +301,19 @@ func EntriesForCleanup(sources []Source, registrySlugs map[string]struct{}) []Cl
 				}
 			}
 			full := filepath.Join(src.Path, name)
-			isSymlink := e.Type()&os.ModeSymlink != 0
+			// e.Type() can omit ModeSymlink (or return zero) on filesystems
+			// that report DT_UNKNOWN from getdents — e.g. XFS formatted with
+			// ftype=0, some NFS configurations, and certain overlayfs mounts.
+			// e.Info() falls back to an explicit lstat so we always classify
+			// symlinks correctly, even in those environments. The extra
+			// syscall per dirent is negligible at the scale we walk.
+			info, err := e.Info()
+			if err != nil {
+				continue
+			}
+			isSymlink := info.Mode()&os.ModeSymlink != 0
 			if !isSymlink {
-				// e.IsDir() returns false for symlinks (it doesn't follow),
-				// so combined with the !isSymlink guard above this rejects
-				// regular files masquerading as a slug.
-				if !e.IsDir() {
+				if !info.IsDir() {
 					continue
 				}
 				if _, err := os.Stat(filepath.Join(full, MainFileName)); err != nil {
