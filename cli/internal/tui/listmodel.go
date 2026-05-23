@@ -471,23 +471,22 @@ func (m ListModel) renderToast() string {
 	if m.toast == "" && m.inflight == 0 {
 		return ""
 	}
-	parts := []string{}
+	var out string
 	if m.inflight > 0 {
-		parts = append(parts, m.spinner.View(),
-			lipgloss.NewStyle().Foreground(ColInk).Render(
-				fmt.Sprintf(" downloading %d skill(s) …", m.inflight)))
+		out = m.spinner.View() + lipgloss.NewStyle().Foreground(ColInk).Render(
+			fmt.Sprintf(" downloading %d skill(s) …", m.inflight))
 	}
 	if m.toast != "" {
 		style := OkStyle
 		if !m.toastOK {
 			style = ErrorStyle
 		}
-		if len(parts) > 0 {
-			parts = append(parts, KeySepStyle.Render("  ·  "))
+		if out != "" {
+			out += KeySepStyle.Render("  ·  ")
 		}
-		parts = append(parts, style.Render(m.toast))
+		out += style.Render(m.toast)
 	}
-	return strings.Join(parts, "")
+	return out
 }
 
 func (m ListModel) renderHeader() string {
@@ -806,9 +805,7 @@ type skillDelegate struct {
 	slug           lipgloss.Style
 	selectedSlug   lipgloss.Style
 	cursorBar      lipgloss.Style
-	downloadStyle  lipgloss.Style
-	doneStyle      lipgloss.Style
-	errStyle       lipgloss.Style
+	statusBadges   map[RowStatus]string
 	statusOf       func(slug string) RowStatus
 }
 
@@ -835,10 +832,12 @@ func newSkillDelegate(statusOf func(string) RowStatus) skillDelegate {
 		cursorBar: lipgloss.NewStyle().
 			Foreground(ColPrimary).
 			Bold(true),
-		downloadStyle: lipgloss.NewStyle().Foreground(ColYellow).Bold(true),
-		doneStyle:     lipgloss.NewStyle().Foreground(ColAccent).Bold(true),
-		errStyle:      lipgloss.NewStyle().Foreground(ColDanger).Bold(true),
-		statusOf:      statusOf,
+		statusBadges: map[RowStatus]string{
+			StatusDownloading: lipgloss.NewStyle().Foreground(ColYellow).Bold(true).Render(" ⟳"),
+			StatusDone:        lipgloss.NewStyle().Foreground(ColAccent).Bold(true).Render(" ✓"),
+			StatusErr:         lipgloss.NewStyle().Foreground(ColDanger).Bold(true).Render(" ✗"),
+		},
+		statusOf: statusOf,
 	}
 }
 
@@ -871,17 +870,11 @@ func (d skillDelegate) Render(w io.Writer, m list.Model, index int, item list.It
 		bar = d.cursorBar.Render("│ ")
 	}
 
-	// Per-row download status badge, if any.
+	// Per-row download status badge, if any. The map's zero value ("") covers
+	// StatusIdle as well as a nil statusOf.
 	badge := ""
 	if d.statusOf != nil {
-		switch d.statusOf(row.Slug) {
-		case StatusDownloading:
-			badge = d.downloadStyle.Render(" ⟳")
-		case StatusDone:
-			badge = d.doneStyle.Render(" ✓")
-		case StatusErr:
-			badge = d.errStyle.Render(" ✗")
-		}
+		badge = d.statusBadges[d.statusOf(row.Slug)]
 	}
 
 	titleText := truncate(row.Title(), width-14)
