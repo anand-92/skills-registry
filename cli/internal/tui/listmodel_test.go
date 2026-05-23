@@ -190,6 +190,29 @@ func TestDownloadDoneMsg_Error(t *testing.T) {
 	}
 }
 
+// Multi-line errors (typical of `gh` subprocess failures) must be flattened
+// before being placed in the toast — otherwise the body would push the
+// footer off-screen.
+func TestDownloadDoneMsg_FlattensMultilineError(t *testing.T) {
+	stub := &stubDownloader{}
+	m := readyModel(t, stub.fn())
+	m.rowState["foo_skill"] = StatusDownloading
+	m.inflight = 1
+
+	got, _ := m.Update(downloadDoneMsg{
+		slug: "foo_skill",
+		err:  errors.New("HTTP 404\nNot Found\nhttps://api.github.com/…"),
+	})
+	mm := got.(ListModel)
+
+	if strings.Contains(mm.toast, "\n") {
+		t.Fatalf("toast contains a newline: %q", mm.toast)
+	}
+	if !strings.Contains(mm.toast, "HTTP 404") || !strings.Contains(mm.toast, "Not Found") {
+		t.Fatalf("toast lost error content: %q", mm.toast)
+	}
+}
+
 func TestEnter_NoOpWithoutDownloader(t *testing.T) {
 	m := readyModel(t, nil)
 	got, cmd := m.Update(enterKey())

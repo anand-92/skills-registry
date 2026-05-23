@@ -122,7 +122,8 @@ type ListModel struct {
 	rowErr   map[string]error
 	inflight int
 
-	// transient toast shown above the footer after each download.
+	// Last download status, shown above the footer until it's replaced by
+	// the next downloadDoneMsg.
 	toast   string
 	toastOK bool
 
@@ -273,7 +274,11 @@ func (m ListModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			m.rowState[msg.slug] = StatusErr
 			m.rowErr[msg.slug] = msg.err
-			m.toast = fmt.Sprintf("✗ %s: %s", name, msg.err.Error())
+			// `gh` subprocess errors are routinely multi-line; flatten so
+			// the toast stays a single row and doesn't push the footer
+			// off-screen.
+			errText := strings.ReplaceAll(msg.err.Error(), "\n", " · ")
+			m.toast = fmt.Sprintf("✗ %s: %s", name, errText)
 			m.toastOK = false
 		} else {
 			m.rowState[msg.slug] = StatusDone
@@ -399,8 +404,9 @@ func (m *ListModel) resize() {
 		return
 	}
 	const headerBlock = 2 // header line + blank
+	const toastBlock = 2  // blank + toast row (always reserved so the layout doesn't jitter)
 	const footerBlock = 2 // blank + footer line
-	panelInner := m.height - headerBlock - footerBlock
+	panelInner := m.height - headerBlock - toastBlock - footerBlock
 	if panelInner < 8 {
 		panelInner = 8
 	}
@@ -444,22 +450,15 @@ func (m ListModel) renderMain() string {
 		body = lipgloss.JoinHorizontal(lipgloss.Top, listPane, "  ", previewPane)
 	}
 
-	toast := m.renderToast()
-	if toast == "" {
-		return lipgloss.JoinVertical(lipgloss.Left,
-			header,
-			"",
-			body,
-			"",
-			footer,
-		)
-	}
+	// The toast row is always emitted (empty when there's nothing to say)
+	// so the body block keeps a constant height and the footer doesn't
+	// jump when downloads start and finish.
 	return lipgloss.JoinVertical(lipgloss.Left,
 		header,
 		"",
 		body,
 		"",
-		toast,
+		m.renderToast(),
 		footer,
 	)
 }
