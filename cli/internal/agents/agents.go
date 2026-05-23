@@ -1,6 +1,7 @@
 // Package agents lists every AI tool dot-folder we know about and the human
-// display name we use for it in the bootstrap multi-select. Mirrors
-// src/skills_mcp/__main__.py's KNOWN_DOT_DIRS plus display labels.
+// display name we use for it in the bootstrap multi-select. This is the
+// canonical list for the project — the Python side no longer carries one
+// (the legacy `gather` command was its only consumer).
 package agents
 
 import "sort"

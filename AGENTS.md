@@ -14,7 +14,7 @@ This file is a living guide for AI agents and new contributors. It captures the 
 |---|---|---|---|
 | `skills-mcp` (Python) | Python 3.10+ | PyPI (`pip install skills-mcp` / `uvx`) | Thin bootstrap (`skills-mcp init`) + legacy local-folder server (`serve`/`list`). |
 | `skill-registry-mcp` (Python) | Python 3.10+ | Same wheel, second `[project.scripts]` entry point | FastMCP server with 3 tools (`list_skills`, `get_skill`, `publish_skill`). |
-| `skill-registry` (Go) | Go 1.22+ | GitHub Releases tarballs (built by `.github/workflows/release-cli.yml`) | Charmbracelet TUI: `bootstrap`, `list`, `get`, `sync`, `add`, `publish`. |
+| `skill-registry` (Go) | Go 1.24+ | GitHub Releases tarballs (built by `.github/workflows/release-cli.yml`) | Charmbracelet TUI: `bootstrap`, `list`, `get`, `sync`, `add`, `publish`. |
 
 - **Build (Python):** `hatchling` (PEP 517)
 - **Package manager (Python):** `uv`
@@ -51,9 +51,10 @@ cli/                     # Separate Go module (own go.mod)
     scan/                # Dot-folder discovery + frontmatter parsing (Go port of discover_skills)
     tui/                 # Bubble Tea models: list, multi-select, input, choice
 
-tests/                   # 136 Python tests (pytest)
+tests/                   # 139 Python tests (pytest)
 docs/
   registry.md            # Architecture deep dive
+website/                 # Marketing site sources (deployed independently)
 .github/workflows/
   ci.yml                 # Python (lint/format/test) + Go (vet/build/test) matrix
   release.yml            # PyPI publish on `release: published`
@@ -69,7 +70,6 @@ docs/
 ```
 [user] → uvx skills-mcp init (Python)
             ├─ ensure_authed(gh)
-            ├─ uv tool install skills-mcp (persists `skill-registry-mcp`)
             ├─ gh release download skill-registry (Go binary → ~/.local/bin)
             └─ os.execv → `skill-registry bootstrap`
                             ├─ scan dot-folders (Go)
@@ -80,6 +80,8 @@ docs/
                             ├─ write skill-registry/SKILL.md to each
                             └─ print MCP JSON snippet
 ```
+
+Persisting `skill-registry-mcp` for desktop MCP clients (Claude Desktop, Cursor, VS Code/Copilot) is the user's responsibility — `uv tool install skills-mcp` (documented in the README) installs both console-script entry points (`skills-mcp` and `skill-registry-mcp`) so clients can launch the registry server without depending on the `uvx` cache. `cmd_init` does **not** run this step itself.
 
 ### Why a separate Go binary?
 
@@ -117,7 +119,7 @@ Force-pushes and any subtree change correctly invalidate.
 
 ### Single source of truth for agent dot-folders
 
-`cli/internal/agents/agents.go` holds the canonical 53-entry list of known AI tool dot-folders, each annotated with a display name and a `Universal`/`UnderHome` flag. The Python side doesn't need this list any more (the legacy `gather` command was the only consumer); for the new flow it's Go-only.
+`cli/internal/agents/agents.go` holds the canonical 56-entry list of known AI tool dot-folders, each annotated with a display name and a `Universal`/`UnderHome` flag. The Python side doesn't need this list any more (the legacy `gather` command was the only consumer); for the new flow it's Go-only.
 
 ---
 
@@ -139,7 +141,7 @@ Force-pushes and any subtree change correctly invalidate.
 
 ## Testing
 
-- **Python:** 136 tests, all passing. Modules covered: `cache`, `config`, `gh`, `init`, `registry_api`, `registry_server`, `skill_md`, plus the original `Skill`/`discover_skills`/frontmatter/slug/cli tests. The `registry_api` suite stubs `gh` with a Python shim that replays scripted JSON responses based on argv substring matches.
+- **Python:** 139 tests, all passing. Modules covered: `cache`, `config`, `gh`, `init`, `registry_api`, `registry_server`, `skill_md`, plus the original `Skill`/`discover_skills`/frontmatter/slug/cli tests. The `registry_api` suite stubs `gh` with a Python shim that replays scripted JSON responses based on argv substring matches.
 - **Go:** Tests for `agents`, `bootstrap`, `config`, `scan`, and `registry` (also uses a `gh` shim invoked via `/bin/sh` → `python3`). Run with `cd cli && go test ./...`.
 - Run everything:
   ```bash
@@ -209,6 +211,7 @@ uv run pre-commit install
 ```
 
 When making changes:
+- **FastMCP server conventions.** Construct servers with `FastMCP(name, instructions=..., version=__version__)`. Register every tool through `@server.tool(...)` and pass an `annotations={...}` dict carrying the safety hints that matter for client gating — `readOnlyHint` / `destructiveHint` / `openWorldHint`. Use `Args:` docstring sections only when per-parameter descriptions add real value (e.g. mutually-exclusive params); single-arg tools don't need them. Don't pass `title` or `idempotentHint` unless you have a concrete consumer.
 - **Keep Python and Go in sync.** If you change the registry contract (`registry_api.py` ↔ `registry.go`), update both implementations and both test suites in the same PR. Same for the `skill-registry/SKILL.md` template.
 - Do not add new mandatory runtime dependencies without justification. The Python side has exactly one (`fastmcp`); the Go side has cobra + bubbletea/bubbles/lipgloss + yaml.v3.
 - Update `README.md` and `docs/registry.md` if you change anything user-visible.
