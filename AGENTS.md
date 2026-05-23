@@ -171,9 +171,15 @@ Force-pushes and any subtree change correctly invalidate.
 ## CI / CD
 
 - `.github/workflows/ci.yml` — runs the Python job (ruff lint + format + pytest with coverage) **and** the Go job (vet + build + test) in parallel on every push/PR. Both must be green to merge.
-- `.github/workflows/release.yml` — builds and publishes the Python wheel to PyPI on `release: published`. Relies on CI having passed on `main`.
-- `.github/workflows/release-cli.yml` — on `cli-v*` tag push, builds `darwin/amd64`, `darwin/arm64`, `linux/amd64`, `linux/arm64`, `windows/amd64` tarballs and uploads them as release assets. `skills-registry init` downloads from this same release.
-- **Gaps:** No Python version matrix yet, no OS matrix for the Python tests, no Dependabot, no codecov upload (coverage XML is generated but not uploaded), no integration tests that actually call GitHub.
+- `.github/workflows/release.yml` — **auto-releases on every push to `main` that touches `src/`, `cli/`, `tests/`, or `pyproject.toml`**. Steps:
+  1. Guard skips the run if the last commit message starts with `chore(release):` (the workflow's own bump commit) or contains `[skip release]`.
+  2. Tests gate (ruff + pytest + go vet + go test) — must pass.
+  3. Bump job sed-bumps the patch version in `pyproject.toml` + `src/skills_mcp/__init__.py`, commits `chore(release): vX.Y.Z`, tags `vX.Y.Z`, and pushes back to `main` using the default `GITHUB_TOKEN`. The push triggers another workflow run that the guard skips.
+  4. Builds the Python wheel + sdist (`uv build`) and the Go CLI for `darwin/amd64`, `darwin/arm64`, `linux/amd64`, `linux/arm64`, `windows/amd64`.
+  5. Creates a single GitHub Release `vX.Y.Z` containing all 7 assets (wheel, sdist, 4 Go tarballs, 1 Go zip). `skills-registry init` downloads the Go binary from this same "latest" release.
+  6. Publishes the wheel to PyPI via the `pypi` environment using `PYPI_API_TOKEN`.
+- Force a non-patch bump with `gh workflow run release.yml -f bump=minor` (or `major`). Commit-message marker `[skip release]` opts out a single push.
+- **Gaps:** No Python version matrix yet, no OS matrix for the Python tests, no Dependabot, no codecov upload (coverage XML is generated but not uploaded), no integration tests that actually call GitHub. The test gate inside `release.yml` is a near-duplicate of `ci.yml`; if you change one, check the other.
 
 ---
 
