@@ -1,3 +1,3 @@
-"""skills-mcp — expose a directory of Markdown skills over MCP."""
+"""skills-mcp — GitHub-backed skill registry tooling."""
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"

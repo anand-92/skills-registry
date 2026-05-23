@@ -1,0 +1,171 @@
+package main
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"regexp"
+	"strings"
+
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/spf13/cobra"
+
+	"github.com/anand-92/skills-mcp/cli/internal/config"
+	"github.com/anand-92/skills-mcp/cli/internal/registry"
+	"github.com/anand-92/skills-mcp/cli/internal/scan"
+	"github.com/anand-92/skills-mcp/cli/internal/tui"
+)
+
+var ghShorthandRe = regexp.MustCompile(`^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`)
+
+func newAddCmd() *cobra.Command {
+	var (
+		yes bool
+		all bool
+	)
+	cmd := &cobra.Command{
+		Use:   "add <source>",
+		Short: "Add skills from an external source (path, owner/repo, or git URL) to the registry",
+		Long: `Clones (or uses) the source, discovers every SKILL.md inside it, lets
+you multi-select what to publish, and pushes the selected skills to your
+GitHub registry repo — not your local folder.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runAdd(cmd.Context(), args[0], yes, all)
+		},
+	}
+	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "Skip confirmation prompt.")
+	cmd.Flags().BoolVar(&all, "all", false, "Publish every skill found in the source.")
+	return cmd
+}
+
+func runAdd(ctx context.Context, source string, yes, all bool) error {
+	cfg, err := config.Load()
+	if err != nil {
+		return err
+	}
+	client, err := registry.New(cfg.Repo, cfg.DefaultBranch)
+	if err != nil {
+		return err
+	}
+
+	dir, cleanup, err := resolveSource(source)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+
+	skills, err := scan.Discover([]scan.Source{{Path: dir, Label: source}})
+	if err != nil {
+		return err
+	}
+	if len(skills) == 0 {
+		return fmt.Errorf("no SKILL.md files found under %s", source)
+	}
+
+	picked := skills
+	if !all {
+		picked, err = promptAddSelection(skills)
+		if err != nil {
+			return err
+		}
+		if len(picked) == 0 {
+			fmt.Println("Nothing selected.")
+			return nil
+		}
+	}
+
+	if !yes && !all {
+		fmt.Printf("\nAbout to publish %d skill(s) from %s to %s. Continue? [Y/n] ",
+			len(picked), source, cfg.Repo)
+		var resp string
+		_, _ = fmt.Scanln(&resp)
+		if resp != "" && resp != "y" && resp != "Y" {
+			fmt.Println("Aborted.")
+			return nil
+		}
+	}
+
+	for _, sk := range picked {
+		files := map[string][]byte{}
+		if err := walkSkillIntoFiles(sk, files); err != nil {
+			return err
+		}
+		bySlug := map[string][]byte{}
+		for k, v := range files {
+			if len(k) > len(sk.Slug)+1 {
+				bySlug[k[len(sk.Slug)+1:]] = v
+			}
+		}
+		if _, err := client.Publish(ctx, sk.Slug, bySlug, fmt.Sprintf("add: %s (from %s)", sk.Slug, source)); err != nil {
+			return fmt.Errorf("publish %s: %w", sk.Slug, err)
+		}
+		fmt.Println(tui.OkStyle.Render("✓"), sk.Slug)
+	}
+	return nil
+}
+
+func promptAddSelection(skills []scan.Skill) ([]scan.Skill, error) {
+	items := make([]tui.MultiSelectItem, 0, len(skills))
+	for _, s := range skills {
+		items = append(items, tui.MultiSelectItem{
+			Value: s,
+			Label: s.Name,
+			Hint:  s.Slug,
+		})
+	}
+	model := tui.NewMultiSelect("Select skills to publish", items, nil, true)
+	out, err := tea.NewProgram(model).Run()
+	if err != nil {
+		return nil, err
+	}
+	final := out.(tui.MultiSelectModel)
+	if final.Cancelled() {
+		return nil, fmt.Errorf("cancelled")
+	}
+	var picked []scan.Skill
+	for _, v := range final.SelectedValues() {
+		picked = append(picked, v.(scan.Skill))
+	}
+	return picked, nil
+}
+
+func resolveSource(source string) (string, func(), error) {
+	if strings.HasPrefix(source, "./") || strings.HasPrefix(source, "/") || strings.HasPrefix(source, "../") || strings.HasPrefix(source, "~") {
+		path := source
+		if strings.HasPrefix(path, "~") {
+			home, _ := os.UserHomeDir()
+			path = filepath.Join(home, path[1:])
+		}
+		abs, err := filepath.Abs(path)
+		if err != nil {
+			return "", noopCleanup, err
+		}
+		info, err := os.Stat(abs)
+		if err != nil || !info.IsDir() {
+			return "", noopCleanup, fmt.Errorf("not a directory: %s", source)
+		}
+		return abs, noopCleanup, nil
+	}
+
+	url := source
+	if ghShorthandRe.MatchString(source) {
+		url = "https://github.com/" + source + ".git"
+	}
+	tmp, err := os.MkdirTemp("", "skill-registry-add-")
+	if err != nil {
+		return "", noopCleanup, err
+	}
+	cleanup := func() { _ = os.RemoveAll(tmp) }
+	fmt.Println(tui.HintStyle.Render("cloning " + url + " …"))
+	cmd := exec.Command("git", "clone", "--depth", "1", "--single-branch", url, tmp)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		cleanup()
+		return "", noopCleanup, fmt.Errorf("git clone failed: %s", strings.TrimSpace(string(out)))
+	}
+	return tmp, cleanup, nil
+}
+
+func noopCleanup() {}

@@ -1,4 +1,15 @@
-"""Entry point: ``python -m skills_mcp`` and the ``skills-mcp`` console script."""
+"""Entry point: ``python -m skills_mcp`` and the ``skills-mcp`` console script.
+
+Owns:
+
+* The legacy local-folder MCP server (``serve`` / ``list``) — kept for users
+  who haven't migrated to the GitHub registry flow.
+* The ``init`` subcommand that bootstraps a GitHub-backed registry by
+  delegating to the ``skill-registry`` Go CLI.
+
+The shared ``Skill`` value object and ``discover_skills`` helper continue to
+live here because both the legacy server and the registry tooling need them.
+"""
 
 from __future__ import annotations
 
@@ -50,11 +61,7 @@ def _parse_bool(name: str, default: bool) -> bool:
 
 
 def _parse_frontmatter(text: str) -> tuple[dict[str, str], str]:
-	"""Extract a flat YAML-ish frontmatter block (``--- ... ---``) from the top of a file.
-
-	Returns ``(meta, body)``. Only ``key: value`` lines are recognized — we intentionally
-	avoid a YAML dependency for this tiny use case.
-	"""
+	"""Extract a flat YAML-ish frontmatter block (``--- ... ---``) from the top of a file."""
 	if not text.startswith("---"):
 		return {}, text
 	lines = text.splitlines()
@@ -202,8 +209,10 @@ def main(argv: list[str] | None = None) -> int:
 	parser = argparse.ArgumentParser(
 		prog="skills-mcp",
 		description=(
-			"MCP server that exposes a directory of Markdown SKILL.md files "
-			"as resources/tools to any MCP-compatible client."
+			"GitHub-backed skill registry. Run `skills-mcp init` once to create "
+			"a registry repo and install the `skill-registry` CLI. The legacy "
+			"local-folder MCP server (`serve`/`list`) is still available for "
+			"users who haven't migrated."
 		),
 	)
 	parser.add_argument(
@@ -220,22 +229,18 @@ def main(argv: list[str] | None = None) -> int:
 	subparsers = parser.add_subparsers(dest="command", metavar="<command>")
 	subparsers.add_parser(
 		"serve",
-		help="Run the MCP server (default when no command is given).",
+		help="Run the legacy local-folder MCP server (default when no command is given).",
 	)
 	subparsers.add_parser(
 		"list",
-		help="List discovered skills and exit.",
+		help="List discovered local skills and exit.",
 	)
 
-	# `gather` subcommand is defined in its own module to keep this file small.
-	from .gather import register_subparser as _register_gather
+	# `init` — bootstrap a GitHub-backed registry. Defined in its own module
+	# so the import is deferred to when it's actually used.
+	from .init import register_subparser as _register_init
 
-	_register_gather(subparsers)
-
-	# `add` subcommand — install skills from a remote repo or local path.
-	from .add import register_subparser as _register_add
-
-	_register_add(subparsers)
+	_register_init(subparsers)
 
 	args = parser.parse_args(argv)
 
@@ -245,15 +250,10 @@ def main(argv: list[str] | None = None) -> int:
 		stream=sys.stderr,
 	)
 
-	if args.command == "gather":
-		from .gather import cmd_gather
+	if args.command == "init":
+		from .init import cmd_init
 
-		return cmd_gather(args)
-
-	if args.command == "add":
-		from .add import cmd_add
-
-		return cmd_add(args)
+		return cmd_init(args)
 
 	if args.list or args.command == "list":
 		return _cmd_list()

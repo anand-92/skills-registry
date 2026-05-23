@@ -1,0 +1,48 @@
+package bootstrap
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/anand-92/skills-mcp/cli/internal/agents"
+)
+
+func TestInstallSkillMdWritesEverywhere(t *testing.T) {
+	home := t.TempDir()
+	cwd := t.TempDir()
+	targets := []agents.Target{
+		{DotDir: ".claude", UnderHome: true},
+		{DotDir: ".agents", UnderHome: false},
+	}
+	paths, err := InstallSkillMd(home, cwd, "alice/skills", targets)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(paths) != 2 {
+		t.Fatalf("expected 2 paths, got %d", len(paths))
+	}
+	for _, p := range paths {
+		body, err := os.ReadFile(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(body), "alice/skills") {
+			t.Fatalf("registry repo missing from %s", p)
+		}
+		if !strings.HasSuffix(p, filepath.Join("skill-registry", "SKILL.md")) {
+			t.Fatalf("unexpected path: %s", p)
+		}
+	}
+}
+
+func TestMCPJSONSnippetIncludesBinary(t *testing.T) {
+	out := MCPJSONSnippet("/usr/local/bin/skill-registry-mcp")
+	if !strings.Contains(out, "/usr/local/bin/skill-registry-mcp") {
+		t.Fatalf("snippet missing binary path: %s", out)
+	}
+	if !strings.Contains(out, "skill-registry") {
+		t.Fatalf("snippet missing server name: %s", out)
+	}
+}

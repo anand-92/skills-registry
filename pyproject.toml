@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "skills-mcp"
-version = "0.2.0"
-description = "MCP server that exposes a directory of Markdown skills to any MCP-compatible client (Claude Code, Claude Desktop, Codex, Cursor, ...)."
+version = "0.3.0"
+description = "GitHub-backed skill registry: `skills-mcp init` bootstraps a personal registry repo, `skill-registry-mcp` serves it over MCP, and the `skill-registry` Go CLI manages it."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "Apache-2.0" }
@@ -28,6 +28,7 @@ dependencies = [
 
 [project.scripts]
 skills-mcp = "skills_mcp.__main__:main"
+skill-registry-mcp = "skills_mcp.registry_server:main"
 
 [project.urls]
 Homepage = "https://github.com/anand-92/skills-mcp"
