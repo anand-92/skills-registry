@@ -12,7 +12,7 @@ This file is a living guide for AI agents and new contributors. It captures the 
 
 | Piece | Language | Distribution | Job |
 |---|---|---|---|
-| `skills-mcp` (Python) | Python 3.10+ | PyPI (`pip install skills-mcp` / `uvx`) | Thin bootstrap (`skills-mcp init`) + legacy local-folder server (`serve`/`list`). |
+| `skills-mcp` (Python) | Python 3.10+ | PyPI (`pip install skills-mcp` / `uvx`) | Thin bootstrap (`skills-mcp init`) only. |
 | `skill-registry-mcp` (Python) | Python 3.10+ | Same wheel, second `[project.scripts]` entry point | FastMCP server with 3 tools (`list_skills`, `get_skill`, `publish_skill`). |
 | `skill-registry` (Go) | Go 1.24+ | GitHub Releases tarballs (built by `.github/workflows/release-cli.yml`) | Charmbracelet TUI: `bootstrap`, `list`, `get`, `sync`, `add`, `publish`. |
 
@@ -31,8 +31,8 @@ This file is a living guide for AI agents and new contributors. It captures the 
 
 ```
 src/skills_mcp/
-  __init__.py            # __version__ = "0.3.0"
-  __main__.py            # Legacy local-folder server (serve/list) + init subparser wiring
+  __init__.py            # __version__ = "0.4.0"
+  __main__.py            # `skills-mcp` console script: just wires the `init` subcommand
   init.py                # `skills-mcp init` — thin bootstrap: gh check + Go binary download + os.execv
   registry_server.py     # `skill-registry-mcp` — FastMCP with list_skills / get_skill / publish_skill
   registry_api.py        # RegistryClient: gh-api wrapper, atomic Git-Data-API publish with retry
@@ -40,6 +40,7 @@ src/skills_mcp/
   config.py              # ~/.config/skills-mcp/registry.toml read/save + SKILLS_REGISTRY env override
   cache.py               # ~/.cache/skills-mcp/skills/<slug>/ with tree-SHA meta files
   skill_md.py            # Generated `skill-registry/SKILL.md` template renderer
+  frontmatter.py         # parse_frontmatter / first_paragraph helpers used by registry_api
 
 cli/                     # Separate Go module (own go.mod)
   cmd/skill-registry/    # Cobra root + bootstrap/list/get/sync/add/publish commands
@@ -134,14 +135,14 @@ Force-pushes and any subtree change correctly invalidate.
 | `runBootstrap` | `cli/cmd/skill-registry/bootstrap.go` | Owns the interactive flow (TUI prompts + repo create + agent multi-select). |
 | `find_gh` / `FindGH` | `src/skills_mcp/gh.py`, `cli/internal/registry/registry.go` | PATH + fallback lookup (`~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin`, `/usr/bin`). |
 | `MultiSelectModel` | `cli/internal/tui/multiselect.go` | Fuzzy-searchable multi-select with locked-universal section. |
-| `Skill` / `discover_skills` | `src/skills_mcp/__main__.py` | Still used by the legacy `serve`/`list` path. Slug + frontmatter logic. |
-| `scan.Discover` | `cli/internal/scan/scan.go` | Go port of `discover_skills`. Used by `sync`, `add`, `bootstrap`. |
+| `parse_frontmatter` / `first_paragraph` | `src/skills_mcp/frontmatter.py` | Tiny YAML-ish frontmatter parser + description fallback used by `registry_api`. |
+| `scan.Discover` | `cli/internal/scan/scan.go` | Local skill discovery + frontmatter parsing. Used by `sync`, `add`, `bootstrap`. |
 
 ---
 
 ## Testing
 
-- **Python:** 139 tests, all passing. Modules covered: `cache`, `config`, `gh`, `init`, `registry_api`, `registry_server`, `skill_md`, plus the original `Skill`/`discover_skills`/frontmatter/slug/cli tests. The `registry_api` suite stubs `gh` with a Python shim that replays scripted JSON responses based on argv substring matches.
+- **Python:** focused suite covering `cache`, `config`, `frontmatter`, `gh`, `init`, `registry_api`, `registry_server`, and `skill_md`. The `registry_api` suite stubs `gh` with a Python shim that replays scripted JSON responses based on argv substring matches.
 - **Go:** Tests for `agents`, `bootstrap`, `config`, `scan`, and `registry` (also uses a `gh` shim invoked via `/bin/sh` → `python3`). Run with `cd cli && go test ./...`.
 - Run everything:
   ```bash

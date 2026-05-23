@@ -143,7 +143,7 @@ The Go side mirrors the template in `cli/internal/bootstrap/skillmd.go:SkillMd`.
 | `cli/internal/scan/scan.go` | Walks `<HOME>/<dot>/skills/**/SKILL.md` and `<cwd>/<dot>/skills/**/SKILL.md`. |
 | `cli/cmd/skill-registry/bootstrap.go:dotDirsFromAgents` | Builds the scanner's input from the catalogue. |
 
-The Python side only needs the catalogue for legacy `skills-mcp serve`; that path is unchanged.
+The Python side does not carry this catalogue; it lives only in the Go CLI.
 
 ---
 

@@ -136,12 +136,6 @@ The registry repo URL is stored in `~/.config/skills-mcp/registry.toml` (overrid
 
 ---
 
-## Legacy: local-folder MCP server
-
-The previous `skills-mcp serve` / `skills-mcp list` flow still works for users who haven't migrated. It scans `SKILLS_ROOT` (default `~/my-skills`) and serves any `SKILL.md` it finds. The old `gather` and `add` subcommands were removed in 0.3.0 — `skills-mcp init` and the new CLI cover all of their use cases.
-
----
-
 ## Development
 
 ```bash

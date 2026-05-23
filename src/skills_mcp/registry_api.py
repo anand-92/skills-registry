@@ -33,7 +33,7 @@ _RETRY_BASE_DELAY_S = 0.5
 
 
 def slugify(name: str) -> str:
-	"""Match :func:`skills_mcp.__main__._slug` so slugs stay consistent."""
+	"""Normalize a skill name into a filesystem-safe registry slug."""
 	return _SLUG_RE.sub("_", name.strip().lower()).strip("_") or "skill"
 
 
@@ -314,11 +314,11 @@ class RegistryClient:
 
 def _parse_skill_md(text: str, *, default_name: str) -> tuple[str, str]:
 	"""Pull ``name`` and ``description`` from frontmatter; fall back to body."""
-	from .__main__ import _first_paragraph, _parse_frontmatter
+	from .frontmatter import first_paragraph, parse_frontmatter
 
-	meta, body = _parse_frontmatter(text)
+	meta, body = parse_frontmatter(text)
 	name = meta.get("name", default_name).strip() or default_name
-	description = meta.get("description") or _first_paragraph(body)
+	description = meta.get("description") or first_paragraph(body)
 	# Description in frontmatter can be a folded scalar with newlines — collapse.
 	description = " ".join(description.split())
 	return name, description[:300]
