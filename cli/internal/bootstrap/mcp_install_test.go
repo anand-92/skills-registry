@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -392,8 +393,8 @@ func TestDefaultMCPInstallerUsesLocateMCPBinaryDirs(t *testing.T) {
 			"cli/cmd/skill-registry/bootstrap.go::locateMCPBinary.",
 			m.FallbackDirs, want)
 	}
-	if m.Stderr != os.Stderr {
-		t.Fatalf("default Stderr must be os.Stderr")
+	if m.Stderr != io.Discard {
+		t.Fatalf("default Stderr must be io.Discard (TUI-safe)")
 	}
 	if m.GOOS != runtime.GOOS {
 		t.Fatalf("default GOOS must match runtime.GOOS, got %q", m.GOOS)

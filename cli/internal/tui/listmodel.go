@@ -12,6 +12,7 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/mattn/go-runewidth"
 )
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -838,16 +839,20 @@ func truncate(s string, n int) string {
 	if n == 1 {
 		return "…"
 	}
-	var b strings.Builder
-	for _, r := range s {
-		candidate := b.String() + string(r)
+	runes := []rune(s)
+	w := 0
+	cut := 0
+	for i, r := range runes {
+		rw := runewidth.RuneWidth(r)
 		// Reserve one cell for the trailing ellipsis.
-		if lipgloss.Width(candidate)+1 > n {
+		if w+rw+1 > n {
+			cut = i
 			break
 		}
-		b.WriteRune(r)
+		w += rw
+		cut = i + 1
 	}
-	return b.String() + "…"
+	return string(runes[:cut]) + "…"
 }
 
 func padRight(s string, n int) string {

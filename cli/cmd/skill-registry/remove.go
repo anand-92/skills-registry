@@ -235,8 +235,12 @@ func removeFromCache(slug string) bool {
 // the absolute paths actually deleted so the CLI surface can both
 // count and log them.
 func removeFromDotFolders(slug string) []string {
-	home, _ := os.UserHomeDir()
-	cwd, _ := os.Getwd()
+	home, homeErr := os.UserHomeDir()
+	cwd, cwdErr := os.Getwd()
+	if homeErr != nil || cwdErr != nil {
+		fmt.Fprintf(os.Stderr, "warning: skipping dot-folder cleanup (home=%v, cwd=%v)\n", homeErr, cwdErr)
+		return nil
+	}
 	var deleted []string
 	for _, target := range agents.All() {
 		dir := target.SkillsDir(home, cwd)

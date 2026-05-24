@@ -95,7 +95,7 @@ func defaultMCPInstaller() *MCPInstaller {
 		LookPath:     exec.LookPath,
 		RunInstaller: runInstallerCommand,
 		SkipInstall:  func() bool { return os.Getenv(SkipInstallEnv) != "" },
-		Stderr:       os.Stderr,
+		Stderr:       io.Discard,
 		GOOS:         runtime.GOOS,
 	}
 }
