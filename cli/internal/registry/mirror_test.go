@@ -164,7 +164,7 @@ func TestMirrorGetCopiesNestedFiles(t *testing.T) {
 		t.Skip("git not available")
 	}
 	remote := seedBareWithFiles(t, map[string]string{
-		"gamma/SKILL.md":         "---\nname: Gamma\ndescription: g\n---\n",
+		"gamma/SKILL.md":          "---\nname: Gamma\ndescription: g\n---\n",
 		"gamma/scripts/helper.py": "print('hi')\n",
 	})
 	c := &Client{
