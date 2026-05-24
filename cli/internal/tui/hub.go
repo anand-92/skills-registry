@@ -242,9 +242,10 @@ func (m HubModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // View implements tea.Model.
 func (m HubModel) View() string {
 	header := m.renderHeader()
+	gradient := miniGradientBar(m.width-2, m.sparkleIdx)
 	footer := m.renderFooter()
 	body := m.grid.Render(m.bodyWidth())
-	parts := []string{header, "", body}
+	parts := []string{header, gradient, "", body}
 	if toast := m.renderToast(); toast != "" {
 		parts = append(parts, "", toast)
 	}

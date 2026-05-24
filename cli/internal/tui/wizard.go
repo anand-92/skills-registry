@@ -76,8 +76,6 @@ func (s WizardStep) Title() string {
 	return "Unknown"
 }
 
-
-
 // ────────────────────────────────────────────────────────────────────────────
 // WizardDeps — side effects the wizard delegates to its launcher
 // ────────────────────────────────────────────────────────────────────────────
