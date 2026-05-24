@@ -241,6 +241,13 @@ func removeFromDotFolders(slug string) []string {
 		fmt.Fprintf(os.Stderr, "warning: skipping dot-folder cleanup (home=%v, cwd=%v)\n", homeErr, cwdErr)
 		return nil
 	}
+	return removeFromDotFoldersAt(slug, home, cwd)
+}
+
+// removeFromDotFoldersAt is the testable core of removeFromDotFolders.
+// It accepts explicit home/cwd so callers (and tests) don't depend on
+// the process-wide os.UserHomeDir / os.Getwd.
+func removeFromDotFoldersAt(slug, home, cwd string) []string {
 	var deleted []string
 	for _, target := range agents.All() {
 		dir := target.SkillsDir(home, cwd)

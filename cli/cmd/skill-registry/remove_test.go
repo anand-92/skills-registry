@@ -152,6 +152,7 @@ func TestRunRemoveDeletesRegistryAndLocalArtifacts(t *testing.T) {
 	homeDir := t.TempDir()
 	t.Setenv("HOME", homeDir)
 	t.Setenv("XDG_CACHE_HOME", filepath.Join(homeDir, ".cache"))
+	t.Chdir(homeDir) // ensure os.Getwd() succeeds for dot-folder sweep
 	writeRegistryConfig(t, "x/y")
 	bin := stubGHForRemove(t, successEntries())
 	installGHEnv(t, bin)
@@ -469,7 +470,7 @@ func TestRemoveFromDotFoldersScansAllAgents(t *testing.T) {
 	if err := os.MkdirAll(target, 0o755); err != nil {
 		t.Fatalf("mkdir target: %v", err)
 	}
-	deleted := removeFromDotFolders("demo")
+	deleted := removeFromDotFoldersAt("demo", homeDir, homeDir)
 	if len(deleted) != 1 {
 		t.Fatalf("expected 1 deletion, got %d: %v", len(deleted), deleted)
 	}
