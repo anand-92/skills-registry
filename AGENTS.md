@@ -27,7 +27,9 @@ This file is a living guide for AI agents and new contributors. It captures the 
 - **MCP transport:** stdio via FastMCP 3.x
 - **Network surface:**
   - **MCP server (Python):** every GitHub call goes through `gh api`. No `git`, no SSH, no embedded HTTP client. The server must work in the stripped environment Claude Desktop / Cursor / VS Code give an MCP subprocess.
-  - **CLI bootstrap (Go):** the bulk initial import (wizard step 4) uses **`git push` over HTTPS** (single push for the whole tree) because the per-file `POST /git/blobs` path trips GitHub's secondary rate limit on registries with dozens of skills. Auth is wired through `gh auth setup-git`. Everything else the CLI does (list, get, publish a single skill, sync, remove) still goes through `gh api`.
+  - **CLI bootstrap (Go):** the bulk initial import (wizard step 4) uses **`git push` over HTTPS** (single push for the whole tree) because the per-file `POST /git/blobs` path trips GitHub's secondary rate limit on registries with dozens of skills. Auth is wired through `gh auth setup-git`.
+  - **CLI reads (Go):** `list`, `get`, `sync` and the dashboard hub now read from a **local shallow-clone mirror** at `~/.cache/skills-mcp/mirror/<owner>/<repo>/` (see `cli/internal/registry/mirror.go`). The mirror is created with `git clone --depth=1` and fast-forwarded with `git fetch --depth=1` + `git reset --hard FETCH_HEAD`. The previous `1 + N` sequential `gh api` walk dropped from ~25 s to ~0.8 s warm on a 91-skill registry. `SKILLS_MIRROR_DISABLE=1` (or no `git` on PATH) forces the original gh-api path.
+  - **CLI writes (Go):** single-skill `publish` and `remove` still go through `gh api` — they're 1–10 files, well under the rate limit, and the atomic Git Data API path keeps strict-ordering / null-SHA semantics intact.
   - **Installer (`install.sh`):** the only one-shot `curl … | sh` surface. POSIX `sh`, detects OS/arch, downloads the matching tarball from the latest GitHub Release, drops the binary into `~/.local/bin/skill-registry`. Replaces the old `uvx skills-registry init` flow.
 
 ---

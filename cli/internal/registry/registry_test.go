@@ -112,6 +112,8 @@ func TestExistsPropagatesOtherErrors(t *testing.T) {
 }
 
 func TestListReturnsSummaries(t *testing.T) {
+	// Force the gh-api path; the mirror path is exercised by mirror_test.go.
+	t.Setenv("SKILLS_MIRROR_DISABLE", "1")
 	frontmatter := "---\nname: Code Review\ndescription: review code\n---\nBody.\n"
 	encoded := base64.StdEncoding.EncodeToString([]byte(frontmatter))
 	bin, _ := stubGH(t, []map[string]any{
@@ -177,6 +179,8 @@ func TestPublishRetriesOnConflict(t *testing.T) {
 }
 
 func TestGetDownloadsRecursively(t *testing.T) {
+	// Force the gh-api path; the mirror path is exercised by mirror_test.go.
+	t.Setenv("SKILLS_MIRROR_DISABLE", "1")
 	mdContent := base64.StdEncoding.EncodeToString([]byte("# SKILL"))
 	extraContent := base64.StdEncoding.EncodeToString([]byte("data"))
 	bin, _ := stubGH(t, []map[string]any{
@@ -667,6 +671,48 @@ func TestParseSummary_RegressionMarkerNotStored(t *testing.T) {
 	}
 	if !strings.Contains(desc, "Real text here.") {
 		t.Fatalf("desc lost content: %q", desc)
+	}
+}
+
+// TestParseSummary_PlainMultilineScalar pins the camera1-to-camerax shape:
+// a plain (implicit) YAML scalar with continuation lines indented under the
+// key, no ">" / "|" indicator. The previous parser stopped at the first
+// line and surfaced a truncated description in the registry list preview.
+func TestParseSummary_PlainMultilineScalar(t *testing.T) {
+	text := "---\n" +
+		"name: camera1-to-camerax\n" +
+		"description: Use this skill to migrate legacy Android camera implementations (Camera1\n" +
+		"  or raw Camera2 APIs) to CameraX. CameraX is a lifecycle-aware Jetpack library built\n" +
+		"  on top of Camera2 that resolves camera rotation issues and handles device dependencies.\n" +
+		"license: Complete terms in LICENSE.txt\n" +
+		"---\n# body"
+	name, desc := parseSummary(text, "camera1_to_camerax")
+	if name != "camera1-to-camerax" {
+		t.Fatalf("name = %q, want camera1-to-camerax", name)
+	}
+	want := "Use this skill to migrate legacy Android camera implementations (Camera1 " +
+		"or raw Camera2 APIs) to CameraX. CameraX is a lifecycle-aware Jetpack library built " +
+		"on top of Camera2 that resolves camera rotation issues and handles device dependencies."
+	if desc != want {
+		t.Fatalf("desc = %q\nwant %q", desc, want)
+	}
+}
+
+// TestParseSummary_PlainMultilineScalarStopsAtNextKey verifies that a plain
+// multi-line scalar terminates at the next top-level key (no false fold of
+// the following entry).
+func TestParseSummary_PlainMultilineScalarStopsAtNextKey(t *testing.T) {
+	text := "---\n" +
+		"description: first line\n" +
+		"  continued line\n" +
+		"name: my-skill\n" +
+		"---\n"
+	name, desc := parseSummary(text, "x")
+	if name != "my-skill" {
+		t.Fatalf("name = %q, want my-skill", name)
+	}
+	if desc != "first line continued line" {
+		t.Fatalf("desc = %q", desc)
 	}
 }
 
