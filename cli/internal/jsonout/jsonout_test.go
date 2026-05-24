@@ -188,3 +188,40 @@ func TestBindFlagRegistersPersistentFlag(t *testing.T) {
 		t.Fatalf("BindFlag did not register persistent flag %q", FlagName)
 	}
 }
+
+// TestSwapWriterRedirectsOutput verifies that SwapWriter is wired up
+// correctly: after the swap, every Print / PrintError call lands in the
+// supplied writer instead of os.Stdout, and the previous writer is
+// returned so tests can restore the default on cleanup.
+func TestSwapWriterRedirectsOutput(t *testing.T) {
+	resetEnabled(t)
+	target := &bytes.Buffer{}
+	prev := SwapWriter(target)
+	t.Cleanup(func() { SwapWriter(prev) })
+
+	if err := Print(map[string]string{"slug": "demo"}); err != nil {
+		t.Fatalf("Print: %v", err)
+	}
+	got := strings.TrimSpace(target.String())
+	if got != `{"slug":"demo"}` {
+		t.Fatalf("captured output = %q, want {\"slug\":\"demo\"}", got)
+	}
+}
+
+// TestSwapWriterReturnsPriorWriter pins down the round-trip property:
+// the value SwapWriter returns must match the writer that was active
+// just before the call, so tests can chain `defer SwapWriter(prev)`
+// patterns without losing the original os.Stdout.
+func TestSwapWriterReturnsPriorWriter(t *testing.T) {
+	first := &bytes.Buffer{}
+	originalPrev := SwapWriter(first)
+	t.Cleanup(func() { SwapWriter(originalPrev) })
+
+	second := &bytes.Buffer{}
+	gotPrev := SwapWriter(second)
+	if gotPrev != first {
+		t.Fatalf("SwapWriter did not return the prior writer (first=%p, got=%p)", first, gotPrev)
+	}
+	// Restore so the test cleanup sees a coherent stack.
+	SwapWriter(first)
+}

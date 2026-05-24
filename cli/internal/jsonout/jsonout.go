@@ -63,6 +63,22 @@ func SetEnabled(v bool) {
 	enabled = v
 }
 
+// SwapWriter replaces the package-level stdout writer and returns the
+// previous one so tests can capture emitted JSON and then restore the
+// real os.Stdout on cleanup. Test-only; production callers must leave
+// the default (os.Stdout) in place.
+//
+// We expose this on the public surface rather than reading
+// `os.Stdout` dynamically inside Print/PrintError because the
+// dynamic-lookup variant would mask bugs in subcommand wiring (a test
+// could subvert capture by re-pointing os.Stdout mid-call without ever
+// touching the helper).
+func SwapWriter(w io.Writer) io.Writer {
+	prev := stdout
+	stdout = w
+	return prev
+}
+
 // Print marshals v as compact JSON and writes the result to stdout
 // followed by a single newline. Returns any marshal or write error so
 // the caller can surface it through its normal error path.

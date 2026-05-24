@@ -92,7 +92,7 @@ func dispatchHubAction(ctx context.Context, action string) hubToast {
 	case tui.HubActionPublish:
 		return runPublishFromHub(ctx)
 	case tui.HubActionRemove:
-		return hubToast{text: "remove · wiring lands in F4.1", ok: true}
+		return runRemoveFromHub(ctx)
 	case tui.HubActionSettings:
 		return runSettingsFromHub(ctx)
 	}
@@ -185,6 +185,36 @@ func runAddFromHub(ctx context.Context) hubToast {
 		return errToast("add", err)
 	}
 	return hubToast{text: fmt.Sprintf("✓ added from %s", source), ok: true}
+}
+
+// runRemoveFromHub prompts for the slug then delegates to runRemove.
+// The interactive confirmation lives inside runRemove (yes=false,
+// quietMode=false), so we don't need a second prompt here. A
+// user-initiated abort at the confirm step lands as a neutral
+// "cancelled" toast rather than an error.
+func runRemoveFromHub(ctx context.Context) hubToast {
+	slug, cancelled, err := promptHubLine(
+		"Remove a skill",
+		"slug to delete (e.g. code-review)",
+		"esc to cancel · enter to continue",
+	)
+	if err != nil {
+		return errToast("remove", err)
+	}
+	if cancelled || slug == "" {
+		return hubToast{text: "remove · cancelled", ok: true}
+	}
+	report, err := runRemove(ctx, slug, false, false)
+	if err != nil {
+		return errToast("remove", err)
+	}
+	if report == nil {
+		return hubToast{text: "remove · cancelled", ok: true}
+	}
+	return hubToast{
+		text: fmt.Sprintf("✓ removed %s", removeSummaryLine(*report)),
+		ok:   true,
+	}
 }
 
 // runPublishFromHub prompts for the local skill folder path then

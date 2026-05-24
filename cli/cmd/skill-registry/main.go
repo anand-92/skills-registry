@@ -49,6 +49,7 @@ Day-to-day, use:
   skill-registry sync                     push local skills missing from the registry
   skill-registry add <source>             clone a source, multi-select what to publish
   skill-registry publish <path>           publish a single local skill folder
+  skill-registry remove <slug>            delete a skill from the registry + local copies
   skill-registry bootstrap                explicit (re-)run of the bootstrap flow`,
 		Version: version,
 		Args:    cobra.NoArgs,
@@ -67,6 +68,7 @@ Day-to-day, use:
 		newSyncCmd(),
 		newAddCmd(),
 		newPublishCmd(),
+		newRemoveCmd(),
 	)
 
 	return root

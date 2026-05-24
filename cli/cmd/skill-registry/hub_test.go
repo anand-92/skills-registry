@@ -71,19 +71,31 @@ func TestErrToastDemotesWrappedCancellation(t *testing.T) {
 	}
 }
 
-// TestDispatchHubActionRemovePlaceholder pins the remove tile's interim
-// behavior: F4.1 will replace this branch with a real flow, but until
-// then it must produce a neutral toast that doesn't fail the loop.
-func TestDispatchHubActionRemovePlaceholder(t *testing.T) {
+// TestDispatchHubActionRemoveMissingConfig pins the F4.1 wiring: with
+// no config on disk, runRemoveFromHub fails fast in
+// loadRegistryForRemove and surfaces an error toast that still names
+// the action. We point XDG_CONFIG_HOME at an isolated tempdir so the
+// test never reads or writes the developer's real registry.toml.
+//
+// runRemoveFromHub also tries to launch a Bubble Tea program to prompt
+// for the slug. In a non-TTY test environment that call returns an
+// error immediately, which is exactly what we want: the toast names
+// the action, ok=false, and fatal stays nil so the hub loop continues.
+func TestDispatchHubActionRemoveMissingConfig(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("SKILLS_REGISTRY", "")
 	r := dispatchHubAction(context.Background(), tui.HubActionRemove)
-	if !r.ok {
-		t.Errorf("remove placeholder should be neutral (ok=true), got ok=%v", r.ok)
+	if r.ok {
+		t.Errorf("remove without config/TTY should produce error toast, got ok=true: %q", r.text)
 	}
-	if !strings.Contains(r.text, "F4.1") {
-		t.Errorf("remove placeholder should reference follow-up feature: %q", r.text)
+	if !strings.Contains(r.text, "remove") {
+		t.Errorf("remove toast should name the action: %q", r.text)
+	}
+	if strings.Contains(r.text, "F4.1") {
+		t.Errorf("remove still using placeholder text: %q", r.text)
 	}
 	if r.fatal != nil {
-		t.Errorf("remove placeholder set fatal=%v", r.fatal)
+		t.Errorf("remove dispatch set fatal=%v, want nil so loop continues", r.fatal)
 	}
 }
 
