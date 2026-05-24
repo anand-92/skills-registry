@@ -112,6 +112,8 @@ func TestExistsPropagatesOtherErrors(t *testing.T) {
 }
 
 func TestListReturnsSummaries(t *testing.T) {
+	// Force the gh-api path; the mirror path is exercised by mirror_test.go.
+	t.Setenv("SKILLS_MIRROR_DISABLE", "1")
 	frontmatter := "---\nname: Code Review\ndescription: review code\n---\nBody.\n"
 	encoded := base64.StdEncoding.EncodeToString([]byte(frontmatter))
 	bin, _ := stubGH(t, []map[string]any{
@@ -177,6 +179,8 @@ func TestPublishRetriesOnConflict(t *testing.T) {
 }
 
 func TestGetDownloadsRecursively(t *testing.T) {
+	// Force the gh-api path; the mirror path is exercised by mirror_test.go.
+	t.Setenv("SKILLS_MIRROR_DISABLE", "1")
 	mdContent := base64.StdEncoding.EncodeToString([]byte("# SKILL"))
 	extraContent := base64.StdEncoding.EncodeToString([]byte("data"))
 	bin, _ := stubGH(t, []map[string]any{

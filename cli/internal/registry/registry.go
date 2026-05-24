@@ -88,12 +88,18 @@ type Client struct {
 	// PushTreeViaGit call where the working tree matches the remote).
 	OnStatus func(msg string)
 	// HTTPSURL, if set, overrides the default `https://github.com/<repo>.git`
-	// remote URL used by PushTreeViaGit. Tests set this to a local bare repo
-	// path; production callers leave it empty.
+	// remote URL used by PushTreeViaGit and the read-side mirror clone.
+	// Tests set this to a local bare repo path; production callers leave it
+	// empty.
 	HTTPSURL string
 	// GitBin, if set, overrides exec.LookPath("git"). Tests inject this; in
 	// production callers leave it empty.
 	GitBin string
+	// MirrorRoot, if set, overrides the default
+	// ~/.cache/skills-mcp/mirror/<owner>/<repo> directory used by the
+	// git-backed read mirror. Tests inject a t.TempDir() so suites never
+	// touch the user's real cache; production callers leave it empty.
+	MirrorRoot string
 }
 
 // New constructs a client with sensible defaults. Looks up `gh` if not set.
@@ -123,8 +129,20 @@ type Summary struct {
 	TreeSHA     string
 }
 
-// Slugs returns a set of every top-level slug in the registry.
+// Slugs returns a set of every top-level slug in the registry. Reads
+// from the local git mirror when available (see mirror.go); falls back
+// to a single `gh api repos/<r>/contents/` call when the mirror is
+// disabled or the clone fails.
 func (c *Client) Slugs(ctx context.Context) (map[string]struct{}, error) {
+	if c.mirrorEnabled() {
+		if out, err := c.slugsViaMirror(ctx); err == nil {
+			return out, nil
+		}
+	}
+	return c.slugsViaAPI(ctx)
+}
+
+func (c *Client) slugsViaAPI(ctx context.Context) (map[string]struct{}, error) {
 	entries, err := c.contents(ctx, "")
 	if err != nil {
 		return nil, err
@@ -138,8 +156,21 @@ func (c *Client) Slugs(ctx context.Context) (map[string]struct{}, error) {
 	return out, nil
 }
 
-// List enumerates registry skills with their summaries.
+// List enumerates registry skills with their summaries. Reads from the
+// local git mirror when available; falls back to the 1 + N gh-api walk
+// when the mirror is disabled (SKILLS_MIRROR_DISABLE) or `git` is
+// unavailable. The fallback exists so the CLI keeps working on hosts
+// without a usable `git` binary — at the cost of being slow.
 func (c *Client) List(ctx context.Context) ([]Summary, error) {
+	if c.mirrorEnabled() {
+		if out, err := c.listViaMirror(ctx); err == nil {
+			return out, nil
+		}
+	}
+	return c.listViaAPI(ctx)
+}
+
+func (c *Client) listViaAPI(ctx context.Context) ([]Summary, error) {
 	entries, err := c.contents(ctx, "")
 	if err != nil {
 		return nil, err
@@ -185,8 +216,15 @@ func (c *Client) summarize(ctx context.Context, slug, treeSHA string) (Summary, 
 	}, true, nil
 }
 
-// Get downloads the full <slug>/ folder into dest. Existing files are overwritten.
+// Get downloads the full <slug>/ folder into dest. Existing files are
+// overwritten. Reads from the local git mirror when available; falls
+// back to the recursive gh-api walk otherwise.
 func (c *Client) Get(ctx context.Context, slug, dest string) error {
+	if c.mirrorEnabled() {
+		if err := c.getViaMirror(ctx, slug, dest); err == nil {
+			return nil
+		}
+	}
 	return c.downloadRecursive(ctx, slug, dest)
 }
 
