@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -30,7 +31,10 @@ type addJSONResult struct {
 	Skipped []string `json:"skipped"`
 }
 
-var ghShorthandRe = regexp.MustCompile(`^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`)
+var (
+	ghShorthandRe      = regexp.MustCompile(`^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`)
+	windowsDrivePathRe = regexp.MustCompile(`^[A-Za-z]:`)
+)
 
 func newAddCmd() *cobra.Command {
 	var (
@@ -72,7 +76,7 @@ func runAddJSON(ctx context.Context, source string) error {
 		jsonout.PrintError(err)
 		return err
 	}
-	dir, cleanup, err := resolveSource(source)
+	dir, cleanup, err := resolveSource(ctx, source)
 	if err != nil {
 		jsonout.PrintError(err)
 		return err
@@ -94,6 +98,7 @@ func runAddJSON(ctx context.Context, source string) error {
 		return err
 	}
 	var pushed, skipped []string
+	safeSource := redactSourceUserInfo(source)
 	for _, sk := range skills {
 		if _, dup := existing[sk.Slug]; dup {
 			skipped = append(skipped, sk.Slug)
@@ -105,7 +110,7 @@ func runAddJSON(ctx context.Context, source string) error {
 			return err
 		}
 		bySlug := rekeyBySlug(sk.Slug, files)
-		msg := fmt.Sprintf("add: %s (from %s)", sk.Slug, source)
+		msg := fmt.Sprintf("add: %s (from %s)", sk.Slug, safeSource)
 		if _, err := client.Publish(ctx, sk.Slug, bySlug, msg); err != nil {
 			err = fmt.Errorf("publish %s: %w", sk.Slug, err)
 			jsonout.PrintError(err)
@@ -132,7 +137,7 @@ func runAdd(ctx context.Context, source string, yes, all bool) error {
 		return err
 	}
 
-	dir, cleanup, err := resolveSource(source)
+	dir, cleanup, err := resolveSource(ctx, source)
 	if err != nil {
 		return err
 	}
@@ -158,8 +163,9 @@ func runAdd(ctx context.Context, source string, yes, all bool) error {
 		return nil
 	}
 
+	safeSource := redactSourceUserInfo(source)
 	return publishSkills(ctx, client, picked, func(slug string) string {
-		return fmt.Sprintf("add: %s (from %s)", slug, source)
+		return fmt.Sprintf("add: %s (from %s)", slug, safeSource)
 	})
 }
 
@@ -217,12 +223,19 @@ func promptAddSelection(skills []scan.Skill) ([]scan.Skill, error) {
 	return picked, nil
 }
 
-func resolveSource(source string) (string, func(), error) {
+func resolveSource(ctx context.Context, source string) (string, func(), error) {
+	return resolveSourceWithNotice(ctx, source, !jsonout.Enabled())
+}
+
+func resolveSourceQuiet(ctx context.Context, source string) (string, func(), error) {
+	return resolveSourceWithNotice(ctx, source, false)
+}
+
+func resolveSourceWithNotice(ctx context.Context, source string, announce bool) (string, func(), error) {
 	if strings.HasPrefix(source, "./") || strings.HasPrefix(source, "/") || strings.HasPrefix(source, "../") || strings.HasPrefix(source, "~") {
-		path := source
-		if strings.HasPrefix(path, "~") {
-			home, _ := os.UserHomeDir()
-			path = filepath.Join(home, path[1:])
+		path, err := validateLocalSourcePath(source)
+		if err != nil {
+			return "", noopCleanup, err
 		}
 		abs, err := filepath.Abs(path)
 		if err != nil {
@@ -244,15 +257,48 @@ func resolveSource(source string) (string, func(), error) {
 		return "", noopCleanup, err
 	}
 	cleanup := func() { _ = os.RemoveAll(tmp) }
-	if !jsonout.Enabled() {
+	if announce {
 		fmt.Println(tui.HintStyle.Render("cloning " + url + " …"))
 	}
-	cmd := exec.Command("git", "clone", "--depth", "1", "--single-branch", url, tmp)
+	cmd := exec.CommandContext(ctx, "git", "clone", "--depth", "1", "--single-branch", url, tmp)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		cleanup()
 		return "", noopCleanup, fmt.Errorf("git clone failed: %s", strings.TrimSpace(string(out)))
 	}
 	return tmp, cleanup, nil
+}
+
+func validateLocalSourcePath(source string) (string, error) {
+	path, err := url.PathUnescape(source)
+	if err != nil {
+		return "", fmt.Errorf("invalid source path encoding: %w", err)
+	}
+	lowerSource := strings.ToLower(source)
+	switch {
+	case strings.Contains(path, `\`) || strings.Contains(lowerSource, "%5c"):
+		return "", fmt.Errorf("invalid source path: backslashes are not allowed")
+	case strings.Contains(lowerSource, "%2f"):
+		return "", fmt.Errorf("invalid source path: encoded separators are not allowed")
+	case strings.HasPrefix(path, "~"):
+		return "", fmt.Errorf("invalid source path: tilde expansion is not allowed")
+	case filepath.IsAbs(path) || windowsDrivePathRe.MatchString(path):
+		return "", fmt.Errorf("invalid source path: absolute paths are not allowed")
+	}
+	for _, segment := range strings.Split(filepath.ToSlash(path), "/") {
+		if segment == ".." {
+			return "", fmt.Errorf("invalid source path: traversal is not allowed")
+		}
+	}
+	return path, nil
+}
+
+func redactSourceUserInfo(source string) string {
+	parsed, err := url.Parse(source)
+	if err != nil || parsed == nil || parsed.User == nil || parsed.Scheme == "" {
+		return source
+	}
+	parsed.User = nil
+	return parsed.String()
 }
 
 func noopCleanup() {}
