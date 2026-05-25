@@ -1,0 +1,40 @@
+name: Deploy website to Firebase
+
+on:
+  push:
+    paths:
+      - "website/**"
+  workflow_dispatch: {}
+
+concurrency:
+  group: website-firebase-deploy
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: website
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build static website
+        run: bun run build
+
+      - name: Deploy to Firebase Hosting
+        uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          repoToken: "${{ secrets.GITHUB_TOKEN }}"
+          firebaseServiceAccount: "${{ secrets.FIREBASE_SERVICE_ACCOUNT_SKILLS_MCP_2026 }}"
+          projectId: skills-mcp-2026
+          channelId: live
+          entryPoint: ./website
