@@ -654,28 +654,36 @@ func (m WizardModel) handleMCPDone(msg wizardMCPDoneMsg) (tea.Model, tea.Cmd) {
 	m.mcpDone = true
 	m.mcpSnippet = msg.snippet
 	m.mcpQuickCopied = -1
+	// Reset clipboard state so a previous visit's success badge doesn't
+	// flicker during re-entry.
+	m.mcpClipboardDone = false
+	m.mcpClipboardOK = false
 	if msg.snippet == "" || m.deps.CopyToClipboard == nil {
 		m.mcpClipboardDone = true
-		m.mcpClipboardOK = false
 		return m, nil
 	}
 	snippet := msg.snippet
 	fn := m.deps.CopyToClipboard
 	return m, func() tea.Msg {
 		if err := fn(snippet); err != nil {
-			return wizardMCPClipboardMsg{ok: false, errMsg: err.Error()}
+			return wizardMCPClipboardMsg{ok: false, errMsg: err.Error(), idx: -1}
 		}
-		return wizardMCPClipboardMsg{ok: true}
+		return wizardMCPClipboardMsg{ok: true, idx: -1}
 	}
 }
 
 // handleMCPClipboard records whether the async clipboard write succeeded.
+// idx==-1 means the main snippet; idx>=0 means a quick-install row.
 func (m WizardModel) handleMCPClipboard(msg wizardMCPClipboardMsg) (tea.Model, tea.Cmd) {
 	if !m.mcpDone {
 		return m, nil
 	}
-	m.mcpClipboardDone = true
-	m.mcpClipboardOK = msg.ok
+	if msg.idx == -1 {
+		m.mcpClipboardDone = true
+		m.mcpClipboardOK = msg.ok
+	} else if msg.ok {
+		m.mcpQuickCopied = msg.idx
+	}
 	return m, nil
 }
 
@@ -706,21 +714,20 @@ func (m WizardModel) handleMCPKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 // handleMCPQuickInstallCopy copies the highlighted quick-install row's
-// command to the clipboard and records the index in mcpQuickCopied.
+// command to the clipboard. mcpQuickCopied is only set upon a successful
+// write so the "✓ copied" badge is not shown after a clipboard error.
 func (m WizardModel) handleMCPQuickInstallCopy() (WizardModel, tea.Cmd) {
-	if m.deps.CopyToClipboard == nil {
-		return m, nil
-	}
-	if len(mcpQuickInstallRows) == 0 {
+	if m.deps.CopyToClipboard == nil || len(mcpQuickInstallRows) == 0 {
 		return m, nil
 	}
 	idx := m.mcpQuickCursor
 	cmd := mcpQuickInstallRows[idx].command
 	fn := m.deps.CopyToClipboard
-	m.mcpQuickCopied = idx
 	return m, func() tea.Msg {
-		_ = fn(cmd)
-		return nil
+		if err := fn(cmd); err != nil {
+			return nil
+		}
+		return wizardMCPClipboardMsg{ok: true, idx: idx}
 	}
 }
 
@@ -770,7 +777,7 @@ func (m WizardModel) renderMCPQuickInstallPanel() string {
 	}
 
 	titleBar := lipgloss.NewStyle().Foreground(ColMuted).
-		Render("── Quick install " + strings.Repeat("─", max(0, panelWidth-18)))
+		Render("── Quick install " + strings.Repeat("─", max(0, panelWidth-17)))
 	var rows []string
 	for i, row := range mcpQuickInstallRows {
 		labelWidth := 14
@@ -787,7 +794,7 @@ func (m WizardModel) renderMCPQuickInstallPanel() string {
 			cmdStyled := lipgloss.NewStyle().Foreground(ColInk).Render(row.command)
 			line = prefix + labelStyled + " " + cmdStyled
 		}
-		if i == m.mcpQuickCopied {
+		if m.mcpDone && i == m.mcpQuickCopied {
 			line += "  " + lipgloss.NewStyle().Foreground(ColAccent).Bold(true).Render("✓ copied")
 		}
 		rows = append(rows, line)

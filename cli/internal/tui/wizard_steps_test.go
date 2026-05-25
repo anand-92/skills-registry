@@ -433,8 +433,8 @@ func TestWizardMCPClipboardSuccessRendersConfirmation(t *testing.T) {
 	snippet := `{"mcpServers":{"skills-registry":{"url":"https://mcp.skills-registry.dev/mcp"}}}`
 	nm, _ := m.Update(wizardMCPDoneMsg{snippet: snippet})
 	wiz := nm.(WizardModel)
-	// The clipboard cmd hasn't fired yet — deliver its result.
-	nm2, _ := wiz.Update(wizardMCPClipboardMsg{ok: true})
+	// The clipboard cmd hasn't fired yet — deliver its result (idx=-1 = main snippet).
+	nm2, _ := wiz.Update(wizardMCPClipboardMsg{ok: true, idx: -1})
 	wiz = nm2.(WizardModel)
 	if !wiz.mcpClipboardOK {
 		t.Error("mcpClipboardOK = false after successful copy")
@@ -461,7 +461,7 @@ func TestWizardMCPClipboardFailShowsFallbackHeadline(t *testing.T) {
 	snippet := `{"mcpServers":{"skills-registry":{"url":"https://mcp.skills-registry.dev/mcp"}}}`
 	nm, _ := m.Update(wizardMCPDoneMsg{snippet: snippet})
 	wiz := nm.(WizardModel)
-	nm2, _ := wiz.Update(wizardMCPClipboardMsg{ok: false, errMsg: "no display"})
+	nm2, _ := wiz.Update(wizardMCPClipboardMsg{ok: false, errMsg: "no display", idx: -1})
 	wiz = nm2.(WizardModel)
 	if wiz.mcpClipboardOK {
 		t.Error("mcpClipboardOK = true after failed copy")
@@ -566,7 +566,8 @@ func TestWizardMCPQuickInstallCursorNavigation(t *testing.T) {
 }
 
 // TestWizardMCPQuickInstallCopiesRow pressing 'c' on row 1 (Codex CLI)
-// calls CopyToClipboard with the Codex command and sets mcpQuickCopied=1.
+// calls CopyToClipboard with the Codex command and sets mcpQuickCopied=1
+// only after the async wizardMCPClipboardMsg is delivered back.
 func TestWizardMCPQuickInstallCopiesRow(t *testing.T) {
 	var copied string
 	deps := WizardDeps{
@@ -580,15 +581,24 @@ func TestWizardMCPQuickInstallCopiesRow(t *testing.T) {
 	m.mcpQuickCursor = 1 // Codex CLI
 	nm, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}})
 	wiz := nm.(WizardModel)
-	if wiz.mcpQuickCopied != 1 {
-		t.Errorf("mcpQuickCopied = %d, want 1", wiz.mcpQuickCopied)
+	// mcpQuickCopied must NOT be set yet — the clipboard write is async.
+	if wiz.mcpQuickCopied == 1 {
+		t.Error("mcpQuickCopied set before async write completed")
 	}
-	// Execute the returned cmd to trigger the actual clipboard write.
+	// Execute the returned cmd to trigger the actual clipboard write and
+	// deliver the resulting message.
 	if cmd != nil {
-		cmd()
+		resultMsg := cmd()
+		if resultMsg != nil {
+			nm2, _ := wiz.Update(resultMsg)
+			wiz = nm2.(WizardModel)
+		}
 	}
 	if copied != mcpQuickInstallRows[1].command {
 		t.Errorf("copied %q, want %q", copied, mcpQuickInstallRows[1].command)
+	}
+	if wiz.mcpQuickCopied != 1 {
+		t.Errorf("mcpQuickCopied = %d after async write, want 1", wiz.mcpQuickCopied)
 	}
 }
 

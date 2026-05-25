@@ -200,9 +200,11 @@ type wizardMCPDoneMsg struct {
 
 // wizardMCPClipboardMsg is the result of the async clipboard write
 // initiated by handleMCPDone. ok is true when the write succeeded.
+// idx is -1 for the main snippet auto-copy, or >=0 for a quick-install row.
 type wizardMCPClipboardMsg struct {
 	ok     bool
 	errMsg string
+	idx    int // -1 for main snippet, >=0 for quick-install row index
 }
 
 const (
