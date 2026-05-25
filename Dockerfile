@@ -44,21 +44,20 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     HOST=0.0.0.0 \
     PORT=8000
 
-# Non-root user; Railway is fine with this and it lets us drop privileges.
-RUN groupadd --system app && useradd --system --gid app --create-home app
-
 COPY --from=builder /opt/venv /opt/venv
 
 # /data is the mount target for the Railway volume that persists OAuth +
-# linking state. Create it eagerly so the first boot has somewhere to write
-# even if the volume hasn't been attached yet (the app will then crash with
-# a clear error message instead of segfaulting).
-RUN mkdir -p /data/oauth && chown -R app:app /data
+# linking state. We run as root because Railway volumes mount with root
+# ownership; trying to chown them at build time gets shadowed by the mount.
+# The container is a single-tenant FastMCP server with no untrusted local
+# input — running as root inside the container is the standard Railway
+# pattern for volume-backed services.
+RUN mkdir -p /data/oauth
 
-USER app
-WORKDIR /home/app
+WORKDIR /root
 
 EXPOSE 8000
 
-# `skill-registry-mcp` is the console script from pyproject.toml.
-CMD ["skill-registry-mcp"]
+# Ensure the volume's oauth subdir exists on every boot (mount may shadow
+# the build-time mkdir if the volume is empty).
+CMD mkdir -p /data/oauth && exec skill-registry-mcp
