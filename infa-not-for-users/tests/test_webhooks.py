@@ -12,7 +12,10 @@ from unittest.mock import AsyncMock
 import httpx
 import pytest
 from key_value.aio.stores.memory import MemoryStore
+from starlette.applications import Starlette
 from starlette.requests import Request
+from starlette.responses import Response
+from starlette.routing import Route
 
 from skills_mcp.github_app import GitHubAppClient, GitHubAppCredentials, InstallationRepo
 from skills_mcp.linking import LinkedRepo, LinkStore
@@ -194,6 +197,43 @@ async def test_installation_created_picks_skills_named_repo_when_multiple(
 	link = await link_store.get_link("222")
 	assert link is not None
 	assert link.repo == "alice/skills"
+
+
+async def test_handler_works_when_mounted_as_starlette_route(
+	secret: str, app_client_stub: GitHubAppClient, link_store: LinkStore
+) -> None:
+	"""Regression test for the production-side mount path.
+
+	The other tests call the handler instance directly with a fabricated
+	``Request``, which bypasses Starlette's routing. Starlette treats
+	class instances with ``__call__`` as ASGI3 apps and dispatches them
+	with ``(scope, receive, send)`` — passing such an instance to
+	``Route(endpoint=...)`` raises ``TypeError: __call__() takes 2
+	positional arguments but 4 were given`` on every request.
+
+	``remote_server._register_routes`` wraps the handler in a plain
+	``async def`` to force the endpoint dispatch path. This test
+	reproduces that mount path and asserts a real POST through the ASGI
+	stack returns 401 (bad signature) rather than 500.
+	"""
+	handler = WebhookHandler(secret=secret, app_client=app_client_stub, link_store=link_store)
+
+	async def endpoint(request: Request) -> Response:
+		return await handler(request)
+
+	app = Starlette(routes=[Route("/github/webhook", endpoint, methods=["POST"])])
+	transport = httpx.ASGITransport(app=app)
+	async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+		resp = await client.post(
+			"/github/webhook",
+			content=b'{"action":"created"}',
+			headers={
+				"X-Hub-Signature-256": "sha256=wrong",
+				"X-GitHub-Event": "installation",
+				"Content-Type": "application/json",
+			},
+		)
+	assert resp.status_code == 401
 
 
 # ------------------------------------------------------------ helpers

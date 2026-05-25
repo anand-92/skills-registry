@@ -44,6 +44,8 @@ from key_value.aio.stores.filetree import (
 	FileTreeV1KeySanitizationStrategy,
 )
 from key_value.aio.wrappers.encryption import FernetEncryptionWrapper
+from starlette.requests import Request
+from starlette.responses import Response
 
 from . import __version__
 from .github_api import SkillSummary, get_skill_md, list_skill_folders, slugify
@@ -299,7 +301,17 @@ def _register_routes(
 		app_client=app_client,
 		link_store=link_store,
 	)
-	server.custom_route("/github/webhook", methods=["POST"])(webhook)
+
+	# Starlette's router dispatches plain ``async def`` endpoints with
+	# ``(request)`` but treats class instances with ``__call__`` as ASGI3
+	# apps — calling them with ``(scope, receive, send)``. Wrap the handler
+	# in a function so the endpoint dispatch path fires; passing the
+	# instance directly raises ``TypeError: __call__() takes 2 positional
+	# arguments but 4 were given`` on every webhook delivery.
+	async def webhook_endpoint(request: Request) -> Response:
+		return await webhook(request)
+
+	server.custom_route("/github/webhook", methods=["POST"])(webhook_endpoint)
 
 
 # ---------------------------------------------------------------- entry
