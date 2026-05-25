@@ -148,6 +148,8 @@ The hosted MCP is **read-only**. It runs in a Docker container on Railway with n
 
 `search_skills` and `get_skill` route through the GitHub Contents API using that token — no `git`, no `gh`, no working tree. The server has no write tool by design: every mutation (publish, sync, add, remove) lives in the Go CLI, which talks to GitHub from the user's machine where credentials and tooling are richer.
 
+**Search contract.** `search_skills` requires a non-empty `query` and returns the top 10 ranked matches via an fzf V1-style fuzzy scorer (greedy forward pass + backward tighten, plus word-boundary / camelCase / consecutive / case-match bonuses) with field weighting (name 2x, slug 1x, description 1x). An empty / whitespace-only query returns a "search requires a term" message rather than dumping the registry — callers wanting to enumerate every slug use the CLI's `list` subcommand instead. The Go CLI's `search` subcommand ships the **same scorer constants, alignment algorithm, and field weighting**; both surfaces have a paired cross-language corpus test that fails if either side drifts.
+
 The CLI has two upload paths.
 
 ### 3.1 Single-skill writes — `gh api` blob path
@@ -223,7 +225,7 @@ The hosted server captures a small, fixed set of product-usage events to PostHog
 
 | Event | Where | Properties | Question it answers |
 |---|---|---|---|
-| `search_skills_called` | `remote_server.search_skills` | `skill_count` | List vs. get ratio; registry sizes |
+| `search_skills_called` | `remote_server.search_skills` | `query`, `skill_count` | Query terms; search vs. get ratio; registry sizes |
 | `get_skill_called` | `remote_server.get_skill` | `slug`, `found` (bool) | Hot skills; "not found" rate (data-quality signal) |
 | `user_not_linked` | `remote_server._track_not_linked` | `tool_name` | Activation funnel: authenticated but no GitHub App install |
 | `repo_linked` | `webhooks._adopt_best_repo` | `installation_id`, `repo_name` | Funnel completion |

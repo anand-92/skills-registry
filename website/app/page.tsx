@@ -335,7 +335,7 @@ export default function Home() {
             <div className="tool-list">
               <div className="tool-row">
                 <span className="tool-name">search_skills(query)</span>
-                <p className="tool-desc">Fuzzy-searches your linked registry. Returns a markdown table with slug, name, and description — top 10 matches for a query, or all skills alphabetically when no query is given.</p>
+                <p className="tool-desc">Fuzzy-ranks your linked registry against a non-empty query using an fzf V1-style scorer (same algorithm as the <span className="inline-code">skills-registry search</span> CLI). Returns the top 10 matches with slug, name, and description.</p>
                 <span className="tool-kind">read</span>
               </div>
               <div className="tool-row">

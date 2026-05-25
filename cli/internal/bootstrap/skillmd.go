@@ -49,14 +49,27 @@ to upgrade.
 
 ## 1. Discover what's available
 
-MCP: call ` + "`search_skills(query=\"<query>\")`" + `.
+The hosted MCP and the CLI use the **same fzf V1-style fuzzy scorer**, so
+agents see the same top-10 ordering via either surface.
+
+**Searching with a query (top 10 ranked matches):**
+
+MCP: call ` + "`search_skills(query=\"<query>\")`" + ` — a non-empty query is
+required; passing ` + "`\"\"`" + ` returns a "search requires a term" message,
+not the full registry.
 
 CLI:
 ` + "```" + `
-skills-registry search [QUERY]
+skills-registry search <query>
 ` + "```" + `
 
-Or use ` + "`skills-registry list`" + ` for an interactive list. Match the user's request against descriptions, not just slugs.
+**Enumerating every skill (no query):**
+
+Use ` + "`skills-registry list`" + ` (TUI or ` + "`--json`" + `). ` + "`search`" + `
+intentionally does not enumerate — the two commands have separate
+responsibilities.
+
+Match the user's request against descriptions, not just slugs.
 
 ## 2. Fetch the skill
 
@@ -127,7 +140,7 @@ letting a human pick from a list.
 | Command | Payload shape |
 |---|---|
 | ` + "`skills-registry list --json`" + ` | ` + "`[{\"slug\": \"...\", \"name\": \"...\", \"description\": \"...\"}, …]`" + ` |
-| ` + "`skills-registry search [QUERY] --json`" + ` | ` + "`[{\"slug\": \"...\", \"name\": \"...\", \"description\": \"...\"}, …]`" + ` |
+| ` + "`skills-registry search <query> --json`" + ` | ` + "`[{\"slug\": \"...\", \"name\": \"...\", \"description\": \"...\"}, …]`" + ` (top 10) |
 | ` + "`skills-registry get <slug> --json`" + ` | ` + "`{\"slug\": \"...\", \"path\": \"...\"}`" + ` (path is the on-disk dest) |
 | ` + "`skills-registry publish <path> --json`" + ` | ` + "`{\"slug\": \"...\", \"sha\": \"...\", \"url\": \"...\"}`" + ` |
 | ` + "`skills-registry sync --json`" + ` | ` + "`{\"pushed\": [...slugs], \"skipped\": [...slugs]}`" + ` |
@@ -137,7 +150,7 @@ letting a human pick from a list.
 (` + "`sync`" + `, ` + "`remove`" + `): JSON callers never get a Bubble Tea
 prompt. Combine with ` + "`jq`" + ` to chain calls — e.g.
 ` + "`skills-registry search <query> --json | jq -r '.[].slug' | xargs -I{} skills-registry get {} --json`" + `
-(or swap ` + "`search <query>`" + ` for ` + "`list`" + ` to pull every slug).
+(or swap ` + "`search <query>`" + ` for ` + "`list`" + ` to enumerate every slug — ` + "`search`" + ` always requires a query).
 
 ## Troubleshooting
 

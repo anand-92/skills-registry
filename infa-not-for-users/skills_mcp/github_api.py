@@ -33,11 +33,30 @@ log = logging.getLogger("skills_mcp.github_api")
 _GITHUB_API = "https://api.github.com"
 _API_VERSION = "2022-11-28"
 _SLUG_RE = re.compile(r"[^a-z0-9]+")
-# Reused by ``_score_skill`` to split queries and field text into tokens.
-# Hoisted out of the function body so we don't re-parse the pattern on
-# every (query, summary) pair — ``search_skills`` calls the scorer once
-# per folder in the registry.
-_TOKEN_RE = re.compile(r"[^a-z0-9]+")
+
+# Word-boundary characters used by the fuzzy scorer to award bonus points
+# when a matched char lands right after one of these delimiters.
+_WORD_BOUNDARY_CHARS = frozenset(" \t\n_-/.\\:")
+
+# Scoring constants — chosen to mirror fzf's V1 weighting so callers get
+# the same ranking intuition as the canonical industry-standard fuzzy
+# finder. Tuning these is a contract change with the Go CLI; bump both
+# in lockstep (see ``cli/cmd/skills-registry/search.go``).
+_BASE_MATCH_SCORE = 16
+_BOUNDARY_BONUS = 8
+_CAMEL_BONUS = 7
+_CONSECUTIVE_BONUS = 5
+_CASE_BONUS = 1
+_GAP_PENALTY = 2
+
+# Field weights for ``_score_skill``. Name is the most semantically
+# precise label; slug and description are tiebreakers. Aligned with the
+# Go CLI.
+_FIELD_WEIGHTS = (("name", 2), ("slug", 1), ("description", 1))
+
+# Hard cap on results returned by ``search_skills`` when a query is
+# given. Matches the CLI.
+_SEARCH_TOP_N = 10
 
 # Cap on concurrent SKILL.md fetches per ``list_skill_folders`` /
 # ``repo_has_skills`` invocation. Set to 8 because (a) it's the httpx
@@ -66,36 +85,118 @@ class SkillSummary:
 	description: str
 
 
-def _score_skill(query: str, summary: SkillSummary) -> int:
-	"""Lightweight fuzzy scorer for skill summaries.
+def _find_alignment(q_lower: str, t_lower: str) -> list[int] | None:
+	"""Locate the tightest right-anchored alignment of ``q_lower`` in
+	``t_lower``.
 
-	Slightly prioritizes field relevance and token matching.
-	Weights: name = 2x, description = 1x, slug = 1x.
+	Returns the indices in ``t_lower`` where each query char matches, or
+	``None`` if any query char doesn't appear in order. Does a forward
+	pass to find any valid alignment, then a backward pass from the end
+	index to snap each match onto its latest valid position — so
+	``"tool"`` against ``"python tooling"`` lines up on the contiguous
+	``tool`` inside ``tooling`` rather than the scattered alignment a
+	pure forward greedy walk would pick.
 	"""
-	q = query.strip().lower()
+	q_len = len(q_lower)
+	# Forward pass — find any valid alignment; we only need the end index.
+	qi = 0
+	end_idx = -1
+	for ti, ch in enumerate(t_lower):
+		if ch == q_lower[qi]:
+			qi += 1
+			if qi == q_len:
+				end_idx = ti
+				break
+	if end_idx < 0:
+		return None
+	# Backward tighten.
+	matches = [0] * q_len
+	qi = q_len - 1
+	ti = end_idx
+	while ti >= 0 and qi >= 0:
+		if t_lower[ti] == q_lower[qi]:
+			matches[qi] = ti
+			qi -= 1
+		ti -= 1
+	if qi >= 0:
+		# Defensive: the forward pass already proved a match exists, so
+		# this branch is unreachable in practice. Return None rather
+		# than asserting because the caller treats it as no-match.
+		return None
+	return matches
+
+
+def _char_score(
+	q_pos: int,
+	t_pos: int,
+	matches: list[int],
+	query: str,
+	text: str,
+	t_lower: str,
+) -> int:
+	"""Score one matched char in the alignment produced by
+	``_find_alignment``."""
+	score = _BASE_MATCH_SCORE
+	if t_pos == 0 or t_lower[t_pos - 1] in _WORD_BOUNDARY_CHARS:
+		score += _BOUNDARY_BONUS
+	elif t_pos > 0 and text[t_pos].isupper() and text[t_pos - 1].islower():
+		score += _CAMEL_BONUS
+	if q_pos > 0 and matches[q_pos] == matches[q_pos - 1] + 1:
+		score += _CONSECUTIVE_BONUS
+	if text[t_pos] == query[q_pos]:
+		score += _CASE_BONUS
+	return score
+
+
+def _fuzzy_score(query: str, text: str) -> int:
+	"""Score a (query, text) pair using fzf V1-style fuzzy matching.
+
+	See ``_find_alignment`` for the alignment logic and ``_char_score``
+	for the per-char weighting. Returns 0 when no alignment exists.
+
+	Mirrors ``fuzzyScore`` in ``cli/cmd/skills-registry/search.go``;
+	bump both together.
+	"""
+	if not query or not text:
+		return 0
+	q_lower = query.lower()
+	t_lower = text.lower()
+	q_len = len(q_lower)
+	if q_len > len(t_lower):
+		return 0
+	matches = _find_alignment(q_lower, t_lower)
+	if matches is None:
+		return 0
+	score = sum(
+		_char_score(q_pos, t_pos, matches, query, text, t_lower)
+		for q_pos, t_pos in enumerate(matches)
+	)
+	span = matches[-1] - matches[0] + 1
+	score -= (span - q_len) * _GAP_PENALTY
+	return max(0, score)
+
+
+def _score_skill(query: str, summary: SkillSummary) -> int:
+	"""Score a skill summary against a query.
+
+	Sums the fuzzy scores of slug / name / description, each weighted by
+	``_FIELD_WEIGHTS``. Returns 0 when no field matches.
+
+	Aligned with the Go CLI implementation; both sides MUST stay in sync
+	or callers will see different rankings depending on which surface
+	(MCP or CLI) they use.
+	"""
+	q = query.strip()
 	if not q:
 		return 0
-
-	slug = summary.slug.lower()
-	name = summary.name.lower()
-	desc = summary.description.lower()
-
-	# Split query into tokens (non-empty lowercase words)
-	q_tokens = [t for t in _TOKEN_RE.split(q) if t]
-
+	field_text = {
+		"slug": summary.slug,
+		"name": summary.name,
+		"description": summary.description,
+	}
 	score = 0
-	for field, w in [(slug, 1), (name, 2), (desc, 1)]:
-		if field == q:
-			score += 1000 * w
-		elif field.startswith(q):
-			score += 500 * w
-		elif q in field:
-			score += 250 * w
-
-		f_tokens = {t for t in _TOKEN_RE.split(field) if t}
-		overlap_count = sum(1 for t in q_tokens if t in f_tokens)
-		score += 100 * w * overlap_count
-
+	for field, weight in _FIELD_WEIGHTS:
+		score += _fuzzy_score(q, field_text[field]) * weight
 	return score
 
 
@@ -108,23 +209,28 @@ async def search_skills(
 ) -> list[SkillSummary]:
 	"""Search skills via fuzzy matching.
 
-	If query is empty or whitespace, returns all skills sorted by slug (alphabetical).
-	Otherwise, scores summaries, sorts by score descending (with slug alphabetical
-	sub-sort for determinism), and returns the top 10 matches.
+	An empty / whitespace-only query returns an empty list — ``search``
+	requires a search term. Callers wanting the full registry should use
+	``list_skill_folders`` directly (or the CLI's ``skills-registry list``).
+
+	Non-empty queries are scored via ``_score_skill`` (fzf V1-style with
+	field weighting), filtered to non-zero scores, sorted by score
+	descending with an alphabetical-slug tiebreaker, and capped at
+	``_SEARCH_TOP_N`` results.
 	"""
-	summaries = await list_skill_folders(token, repo, timeout_s=timeout_s)
 	q_stripped = query.strip()
 	if not q_stripped:
-		return summaries
+		return []
 
-	scored_summaries = []
+	summaries = await list_skill_folders(token, repo, timeout_s=timeout_s)
+	scored_summaries: list[tuple[int, SkillSummary]] = []
 	for s in summaries:
 		score = _score_skill(q_stripped, s)
 		if score > 0:
 			scored_summaries.append((score, s))
 
 	scored_summaries.sort(key=lambda item: (-item[0], item[1].slug))
-	return [s for _, s in scored_summaries[:10]]
+	return [s for _, s in scored_summaries[:_SEARCH_TOP_N]]
 
 
 async def list_skill_folders(

@@ -18,7 +18,9 @@ Wire-up:
 
 Two MCP tools (read-only):
 
-* ``search_skills`` → markdown table from the linked repo.
+* ``search_skills(query)`` → fuzzy-ranked markdown table (top 10). A
+  non-empty query is required; an empty / whitespace-only query returns
+  a "search requires a term" message rather than dumping the registry.
 * ``get_skill(slug)`` → verbatim ``SKILL.md`` contents.
 
 No filesystem caching of skill content (the registry repo is the source of
@@ -201,9 +203,10 @@ def build_server(settings: ServerSettings) -> tuple[FastMCP, LinkStore, GitHubAp
 		instructions=(
 			"Hosted GitHub-backed skill registry. Authenticate via GitHub OAuth, "
 			"install the Skills Registry GitHub App on your skills repo, then "
-			"call `search_skills` to discover skills and `get_skill(slug=...)` to "
-			"read one. The server keeps no local cache; the registry repo is "
-			"the source of truth."
+			'call `search_skills(query="...")` to fuzzy-find skills (a non-empty '
+			"query is required) and `get_skill(slug=...)` to read one. The "
+			"server keeps no local cache; the registry repo is the source of "
+			"truth."
 		),
 		version=__version__,
 		auth=auth,
@@ -228,33 +231,36 @@ def _register_tools(
 	@server.tool(
 		name="search_skills",
 		description=(
-			"Search skills in your linked GitHub skill registry. Returns a "
-			"markdown table of matches with slug, name, and description. "
-			"If query is non-empty, fuzzy-ranks and limits to top 10; "
-			"if query is empty, lists all skills alphabetically."
+			"Fuzzy-search skills in your linked GitHub skill registry. Pass a "
+			"non-empty `query` (matched against slug, name, and description "
+			"with fzf V1-style scoring) and the top 10 ranked matches are "
+			"returned as a markdown table with slug, name, and description. "
+			"An empty or whitespace-only query returns no results — use a "
+			"specific search term."
 		),
 		tags={"skills", "registry"},
 		annotations={"readOnlyHint": True, "openWorldHint": True, "destructiveHint": False},
 	)
-	async def search_skills_tool(query: str = "") -> str:
+	async def search_skills_tool(query: str) -> str:
 		link = await _resolve_link(link_store, install_url=install_url)
 		if isinstance(link, str):
 			_track_not_linked(_current_user_id(), "search_skills")
 			return link
+		q_stripped = query.strip()
+		if not q_stripped:
+			return (
+				"`search_skills` requires a non-empty `query`. Pass a term "
+				"to fuzzy-match against slug, name, and description."
+			)
 		token = await app_client.mint_installation_token(link.installation_id)
-		summaries = await search_skills(token, link.repo, query=query)
+		summaries = await search_skills(token, link.repo, query=q_stripped)
 		posthog_client.capture(
 			distinct_id=_current_user_id(),
 			event="search_skills_called",
-			properties={"query": query, "skill_count": len(summaries)},
+			properties={"query": q_stripped, "skill_count": len(summaries)},
 		)
 		if not summaries:
-			if query.strip():
-				return f"No skills matching `{query}` found in `{link.repo}`."
-			return (
-				f"No skills found in `{link.repo}`. Add a skill with `SKILL.md` "
-				"using the `skills-registry` CLI and they'll appear here."
-			)
+			return f"No skills matching `{query}` found in `{link.repo}`."
 		return _format_skills_table(link.repo, summaries)
 
 	@server.tool(
