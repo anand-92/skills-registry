@@ -27,10 +27,6 @@ import logging
 from dataclasses import asdict, dataclass
 from typing import Any
 
-# `key_value.aio.protocols.key_value` has the AsyncKeyValue Protocol; we
-# import it lazily inside functions to keep this module importable even when
-# the dep isn't installed (useful for tests that swap in a fake KV).
-
 log = logging.getLogger("skills_mcp.linking")
 
 _USERS_COLLECTION = "users"
@@ -66,9 +62,8 @@ class LinkStore:
 	"""
 
 	def __init__(self, kv: Any) -> None:
-		# ``Any`` rather than the Protocol — the typing target is the
-		# async key_value.aio interface but we don't want to make that a
-		# hard import here.
+		# ``Any`` rather than the async key_value.aio Protocol — avoids a
+		# hard import on the KV dep and lets tests swap in a fake.
 		self._kv = kv
 
 	# ------------------------------------------------------------ user link
@@ -99,17 +94,14 @@ class LinkStore:
 		log.info("Linked user %s → %s (install %s)", user_id, link.repo, link.installation_id)
 
 	async def delete_link(self, user_id: str) -> None:
-		raw = await self._kv.get(collection=_USERS_COLLECTION, key=user_id)
-		if isinstance(raw, dict):
-			try:
-				link = LinkedRepo.from_dict(raw)
-				await self._kv.delete(
-					collection=_INSTALLS_COLLECTION,
-					key=str(link.installation_id),
-				)
-			except (ValueError, KeyError, TypeError):
-				# Corrupt — drop both halves anyway.
-				pass
+		# Use the typed accessor so corrupt rows silently drop the reverse
+		# half (we still wipe the forward entry below either way).
+		link = await self.get_link(user_id)
+		if link is not None:
+			await self._kv.delete(
+				collection=_INSTALLS_COLLECTION,
+				key=str(link.installation_id),
+			)
 		await self._kv.delete(collection=_USERS_COLLECTION, key=user_id)
 		log.info("Unlinked user %s", user_id)
 

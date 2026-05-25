@@ -7,25 +7,21 @@ FROM python:3.12-slim AS builder
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
-    UV_LINK_MODE=copy \
-    UV_PROJECT_ENVIRONMENT=/opt/venv
+    UV_LINK_MODE=copy
 
-# Build-time deps for cryptography wheels (most are cached but cffi sometimes
-# needs gcc). Kept minimal — runtime image won't carry these.
+# Build-time deps for cryptography wheels (cffi sometimes needs gcc). Kept
+# minimal — runtime image doesn't carry these.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends build-essential \
-    && rm -rf /var/lib/apt/lists/*
-
-RUN pip install --no-cache-dir uv
+    && rm -rf /var/lib/apt/lists/* \
+    && pip install --no-cache-dir uv
 
 WORKDIR /app
 
-# Copy only what affects the dep set first so `uv sync` is cache-friendly.
+# Copy manifests first so the install layer caches when only src/ changes.
 COPY pyproject.toml README.md ./
 COPY src ./src
 
-# `uv sync --no-dev --frozen` would be ideal but we don't ship the lockfile to
-# the registry build (it's in-repo but the wheel resolver doesn't need it).
 RUN uv venv /opt/venv \
     && uv pip install --python /opt/venv/bin/python .
 

@@ -6,10 +6,10 @@ the GitHub REST Contents API rather than the Git Data API so we never have
 to chase tree SHAs for read-only operations. (Writes would still want the
 Git Data API for atomicity, but remote v1 is read-only.)
 
-Network rules: one ``AsyncClient`` per public call, default 10s timeout,
-no retry beyond what :func:`github_app.with_retry` provides. Per-folder
-``SKILL.md`` fetches run in parallel via ``asyncio.gather`` so a registry
-with N skills costs ~N concurrent requests, not N sequential ones.
+Network rules: one ``AsyncClient`` per public call, 10s default timeout, no
+internal retries. Per-folder ``SKILL.md`` fetches run in parallel via
+``asyncio.gather`` so a registry with N skills costs ~N concurrent requests,
+not N sequential ones.
 """
 
 from __future__ import annotations
@@ -96,12 +96,7 @@ async def get_skill_md(
 	Returns ``None`` if the file does not exist (404). Other errors raise.
 	"""
 	async with httpx.AsyncClient(timeout=timeout_s) as http:
-		blob = await _contents(http, repo, f"{slug}/SKILL.md", token, allow_404=True)
-	if blob is None:
-		return None
-	if not isinstance(blob, dict) or blob.get("encoding") != "base64":
-		return None
-	return base64.b64decode(blob["content"]).decode("utf-8", errors="replace")
+		return await _fetch_skill_md(http, repo, slug, token)
 
 
 async def repo_has_skills(token: str, repo: str, *, timeout_s: float = 10.0) -> bool:
@@ -118,9 +113,7 @@ async def repo_has_skills(token: str, repo: str, *, timeout_s: float = 10.0) -> 
 		for entry in entries:
 			if not _is_skill_folder_entry(entry):
 				continue
-			# Probe the SKILL.md directly — listing the folder costs the same.
-			meta = await _contents(http, repo, f"{entry['name']}/SKILL.md", token, allow_404=True)
-			if isinstance(meta, dict) and meta.get("encoding") == "base64":
+			if await _fetch_skill_md(http, repo, entry["name"], token) is not None:
 				return True
 	return False
 
@@ -134,12 +127,24 @@ async def _summarize_folder(
 	slug: str,
 	token: str,
 ) -> SkillSummary | None:
-	meta = await _contents(http, repo, f"{slug}/SKILL.md", token, allow_404=True)
-	if not isinstance(meta, dict) or meta.get("encoding") != "base64":
+	text = await _fetch_skill_md(http, repo, slug, token)
+	if text is None:
 		return None
-	text = base64.b64decode(meta["content"]).decode("utf-8", errors="replace")
 	name, description = _parse_skill_md(text, default_name=slug)
 	return SkillSummary(slug=slug, name=name, description=description)
+
+
+async def _fetch_skill_md(
+	http: httpx.AsyncClient,
+	repo: str,
+	slug: str,
+	token: str,
+) -> str | None:
+	"""Fetch and base64-decode ``<slug>/SKILL.md``; ``None`` if absent/invalid."""
+	blob = await _contents(http, repo, f"{slug}/SKILL.md", token, allow_404=True)
+	if not isinstance(blob, dict) or blob.get("encoding") != "base64":
+		return None
+	return base64.b64decode(blob["content"]).decode("utf-8", errors="replace")
 
 
 def _is_skill_folder_entry(entry: Any) -> bool:
@@ -182,9 +187,8 @@ def _headers(token: str) -> dict[str, str]:
 def _parse_skill_md(text: str, *, default_name: str) -> tuple[str, str]:
 	"""Pull ``name`` and ``description`` from frontmatter; fall back to body.
 
-	Mirrors :func:`skills_mcp.registry_api._parse_skill_md` from the (now
-	removed) stdio path. Same contract so the Go CLI's view of a skill
-	matches the remote server's.
+	Same contract as the Go CLI so a skill round-trips identically between
+	the two implementations.
 	"""
 	meta, body = parse_frontmatter(text)
 	name = meta.get("name", default_name).strip() or default_name

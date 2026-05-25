@@ -72,30 +72,45 @@ class WebhookHandler:
 		action = payload.get("action", "")
 		log.info("Webhook %s.%s received", event, action)
 
+		handler = self._route(event, action)
+		if handler is None:
+			return JSONResponse({"ignored": f"{event}.{action}"})
+
 		try:
-			handler = _route(event, action)
-			if handler is None:
-				return JSONResponse({"ignored": f"{event}.{action}"})
-			await handler(self, payload)
-			return JSONResponse({"ok": True})
+			await handler(payload)
 		except GitHubAppError as exc:
 			log.error("GitHub API failure handling %s.%s: %s", event, action, exc)
 			return JSONResponse({"error": "github api"}, status_code=502)
 		except (ValueError, KeyError, TypeError) as exc:
 			log.exception("Malformed payload for %s.%s: %s", event, action, exc)
 			return JSONResponse({"error": "bad payload"}, status_code=400)
+		return JSONResponse({"ok": True})
+
+	def _route(self, event: str, action: str) -> Any:
+		"""Map (event, action) → bound handler, or ``None`` to ignore.
+
+		Ignored events get a 200 with ``{ignored: ...}`` so GitHub stops
+		retrying.
+		"""
+		match (event, action):
+			case ("installation", "created" | "unsuspend"):
+				return self._on_installation_created
+			case ("installation", "deleted" | "suspend"):
+				return self._on_installation_removed
+			case ("installation_repositories", "added" | "removed"):
+				return self._on_repos_changed
+		return None
 
 	# ---------------------------------------------------------- handlers
 
 	async def _on_installation_created(self, payload: dict[str, Any]) -> None:
 		install = payload["installation"]
 		installation_id = int(install["id"])
-		account = install.get("account", {})
-		user_id = str(account.get("id", "") or "")
-		if not user_id:
+		account_id = install.get("account", {}).get("id")
+		if not account_id:
 			log.warning("installation.created missing account.id; skipping link")
 			return
-		await self._adopt_best_repo(installation_id, user_id)
+		await self._adopt_best_repo(installation_id, str(account_id))
 
 	async def _on_installation_removed(self, payload: dict[str, Any]) -> None:
 		install = payload["installation"]
@@ -141,24 +156,6 @@ class WebhookHandler:
 		)
 
 
-def _route(event: str, action: str) -> Any:
-	"""Map (event, action) → bound method on :class:`WebhookHandler`.
-
-	Returning ``None`` means "ignore"; the dispatcher will reply 200 with
-	``{ignored: ...}`` so GitHub stops retrying.
-	"""
-	if event == "installation":
-		if action == "created":
-			return WebhookHandler._on_installation_created
-		if action in {"deleted", "suspend"}:
-			return WebhookHandler._on_installation_removed
-		if action == "unsuspend":
-			return WebhookHandler._on_installation_created
-	if event == "installation_repositories" and action in {"added", "removed"}:
-		return WebhookHandler._on_repos_changed
-	return None
-
-
 async def _pick_skills_repo(token: str, repos: list[Any]) -> Any:
 	"""Prefer the obvious "this is a skills registry" repo when present.
 
@@ -167,16 +164,13 @@ async def _pick_skills_repo(token: str, repos: list[Any]) -> Any:
 	2. Any repo that contains SKILL.md folders.
 	3. ``None`` (caller fallbacks to first repo with a warning).
 	"""
-	candidates_with_skills: list[Any] = []
-	for repo in repos:
-		if await repo_has_skills(token, repo.full_name):
-			candidates_with_skills.append(repo)
-	if not candidates_with_skills:
+	candidates = [r for r in repos if await repo_has_skills(token, r.full_name)]
+	if not candidates:
 		return None
-	for repo in candidates_with_skills:
+	for repo in candidates:
 		if "skills" in repo.full_name.lower().split("/")[-1]:
 			return repo
-	return candidates_with_skills[0]
+	return candidates[0]
 
 
 def _verify_signature(secret: bytes, body: bytes, header: str) -> bool:

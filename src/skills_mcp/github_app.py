@@ -25,20 +25,22 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, TypeVar
 
 import httpx
 import jwt
 
 log = logging.getLogger("skills_mcp.github_app")
 
-# RFC 7519 §4.1.4 — token lifetime. GitHub caps App JWTs at 10 minutes; we use
-# 9 to leave headroom for clock skew between us and GitHub.
+T = TypeVar("T")
+
+# GitHub caps App JWTs at 10 minutes; 9 leaves headroom for clock skew.
 _APP_JWT_TTL_S = 9 * 60
 
-# Installation tokens last 1 hour. We re-mint on demand rather than caching to
-# keep this layer stateless; the volume of tool calls per request is tiny.
+# We re-mint installation tokens on demand rather than caching to keep this
+# layer stateless; the volume of tool calls per request is tiny.
 _GITHUB_API = "https://api.github.com"
 _API_VERSION = "2022-11-28"
 
@@ -110,16 +112,16 @@ class GitHubAppClient:
 		app_jwt = self.mint_app_jwt()
 		url = f"{_GITHUB_API}/app/installations/{installation_id}/access_tokens"
 		async with httpx.AsyncClient(timeout=self._timeout) as http:
-			resp = await http.post(url, headers=self._app_headers(app_jwt))
+			resp = await http.post(url, headers=_headers(app_jwt))
 		if resp.status_code != httpx.codes.CREATED:
 			raise GitHubAppError(
-				f"installation_token mint failed: {resp.status_code} {resp.text}",
+				f"mint installation token failed: {resp.status_code} {resp.text}",
 				status=resp.status_code,
 			)
 		body = resp.json()
 		token = body.get("token")
 		if not isinstance(token, str) or not token:
-			raise GitHubAppError(f"installation_token response missing 'token': {body!r}")
+			raise GitHubAppError(f"installation token response missing 'token': {body!r}")
 		return token
 
 	# --------------------------------------------------------- installation repos
@@ -136,44 +138,34 @@ class GitHubAppClient:
 			while True:
 				resp = await http.get(
 					f"{_GITHUB_API}/installation/repositories",
-					headers=self._installation_headers(installation_token),
+					headers=_headers(installation_token),
 					params={"per_page": "100", "page": str(page)},
 				)
 				if resp.status_code != httpx.codes.OK:
 					raise GitHubAppError(
-						f"list_installation_repos failed: {resp.status_code} {resp.text}",
+						f"list installation repos failed: {resp.status_code} {resp.text}",
 						status=resp.status_code,
 					)
 				body = resp.json()
 				entries = body.get("repositories", []) if isinstance(body, dict) else []
-				repos.extend(_parse_repo(e) for e in entries if _is_repo_dict(e))
+				repos.extend(parsed for parsed in (_parse_repo(e) for e in entries) if parsed)
 				if len(entries) < 100:
 					break
 				page += 1
 		return repos
 
-	# ----------------------------------------------------------- helper headers
 
-	def _app_headers(self, app_jwt: str) -> dict[str, str]:
-		return {
-			"Accept": "application/vnd.github+json",
-			"Authorization": f"Bearer {app_jwt}",
-			"X-GitHub-Api-Version": _API_VERSION,
-		}
-
-	def _installation_headers(self, token: str) -> dict[str, str]:
-		return {
-			"Accept": "application/vnd.github+json",
-			"Authorization": f"Bearer {token}",
-			"X-GitHub-Api-Version": _API_VERSION,
-		}
+def _headers(bearer: str) -> dict[str, str]:
+	return {
+		"Accept": "application/vnd.github+json",
+		"Authorization": f"Bearer {bearer}",
+		"X-GitHub-Api-Version": _API_VERSION,
+	}
 
 
-def _is_repo_dict(entry: Any) -> bool:
-	return isinstance(entry, dict) and isinstance(entry.get("full_name"), str)
-
-
-def _parse_repo(entry: dict[str, Any]) -> InstallationRepo:
+def _parse_repo(entry: Any) -> InstallationRepo | None:
+	if not isinstance(entry, dict) or not isinstance(entry.get("full_name"), str):
+		return None
 	return InstallationRepo(
 		full_name=entry["full_name"],
 		default_branch=entry.get("default_branch") or "main",
@@ -184,26 +176,24 @@ def _parse_repo(entry: dict[str, Any]) -> InstallationRepo:
 
 
 async def with_retry(
-	coro_factory: Any,
+	coro_factory: Callable[[], Awaitable[T]],
 	*,
 	attempts: int = 3,
 	base_delay_s: float = 0.5,
 	retry_on: tuple[int, ...] = (502, 503, 504),
-) -> Any:
+) -> T:
 	"""Run ``coro_factory()`` with exponential backoff on transient errors.
 
-	Used by the API layer for endpoints where a 5xx from GitHub is almost
-	always a flake worth retrying. Kept here so all GitHub-touching code
-	shares one retry policy.
+	Shared retry policy for GitHub-touching code: on a status code in
+	``retry_on``, sleep ``base_delay_s * 2**attempt`` and retry. Non-matching
+	errors and the final attempt re-raise.
 	"""
-	last_exc: Exception | None = None
 	for attempt in range(attempts):
 		try:
 			return await coro_factory()
 		except GitHubAppError as exc:
 			if exc.status not in retry_on or attempt == attempts - 1:
 				raise
-			last_exc = exc
 			delay = base_delay_s * (2**attempt)
 			log.warning(
 				"GitHub call retry %d/%d after %s; sleeping %.1fs",
@@ -213,5 +203,5 @@ async def with_retry(
 				delay,
 			)
 			await asyncio.sleep(delay)
-	# Unreachable in practice — the loop always raises or returns.
-	raise last_exc or RuntimeError("with_retry exited without result")
+	# The loop returns or re-raises on every iteration; this is unreachable.
+	raise AssertionError("with_retry: loop exited without returning or raising")

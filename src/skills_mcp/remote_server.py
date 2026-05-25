@@ -46,9 +46,9 @@ from key_value.aio.stores.filetree import (
 from key_value.aio.wrappers.encryption import FernetEncryptionWrapper
 
 from . import __version__
-from .github_api import get_skill_md, list_skill_folders, slugify
+from .github_api import SkillSummary, get_skill_md, list_skill_folders, slugify
 from .github_app import GitHubAppClient, GitHubAppCredentials
-from .linking import LinkStore
+from .linking import LinkedRepo, LinkStore
 from .setup_routes import make_routes
 from .webhooks import WebhookHandler
 
@@ -209,9 +209,9 @@ def _register_tools(
 		annotations={"readOnlyHint": True, "openWorldHint": True},
 	)
 	async def list_skills() -> str:
-		link, setup_msg = await _resolve_link(link_store, install_url=install_url)
-		if link is None:
-			return setup_msg
+		link = await _resolve_link(link_store, install_url=install_url)
+		if isinstance(link, str):
+			return link
 		token = await app_client.mint_installation_token(link.installation_id)
 		summaries = await list_skill_folders(token, link.repo)
 		if not summaries:
@@ -219,18 +219,7 @@ def _register_tools(
 				f"No skills found in `{link.repo}`. Add a skill with `SKILL.md` "
 				"using the `skill-registry` CLI and they'll appear here."
 			)
-		header = (
-			f"Registry: `{link.repo}` ({len(summaries)} skill"
-			f"{'s' if len(summaries) != 1 else ''})\n\n"
-			"| slug | name | description |\n"
-			"| --- | --- | --- |\n"
-		)
-		rows = []
-		for s in summaries:
-			desc = s.description.replace("|", "\\|").replace("\n", " ")
-			rows.append(f"| `{s.slug}` | {s.name} | {desc} |")
-		footer = '\n\nUse `get_skill(slug="<slug>")` to read the SKILL.md for any row above.'
-		return header + "\n".join(rows) + footer
+		return _format_skills_table(link.repo, summaries)
 
 	@server.tool(
 		name="get_skill",
@@ -244,36 +233,52 @@ def _register_tools(
 		annotations={"readOnlyHint": True, "openWorldHint": True},
 	)
 	async def get_skill(slug: str) -> str:
-		link, setup_msg = await _resolve_link(link_store, install_url=install_url)
-		if link is None:
-			return setup_msg
-		normalized = slugify(slug)
+		link = await _resolve_link(link_store, install_url=install_url)
+		if isinstance(link, str):
+			return link
 		token = await app_client.mint_installation_token(link.installation_id)
-		content = await get_skill_md(token, link.repo, normalized)
+		content = await get_skill_md(token, link.repo, slugify(slug))
 		if content is None:
 			return f"Skill `{slug}` not found in `{link.repo}`."
 		return content
 
 
-async def _resolve_link(link_store: LinkStore, *, install_url: str) -> tuple[Any, str]:
-	"""Return the user's link or a friendly setup-needed message.
+async def _resolve_link(link_store: LinkStore, *, install_url: str) -> LinkedRepo | str:
+	"""Return the user's link, or a friendly setup-needed message as a string.
 
-	A return value of ``(None, message)`` means "tell the client the user
-	needs to install the GitHub App". Anything else means we're good to call.
+	A ``str`` result means "tell the MCP client the user needs to install
+	the GitHub App"; a :class:`LinkedRepo` means we're good to call the API.
 	"""
 	token = get_access_token()
 	user_id = str(token.claims.get("sub", "") or "")
 	if not user_id:
-		return None, ("Could not identify GitHub user from token claims. Try re-authenticating.")
+		return "Could not identify GitHub user from token claims. Try re-authenticating."
 	link = await link_store.get_link(user_id)
 	if link is None:
-		return None, (
+		return (
 			"No skills repo linked. Install the Skills Registry GitHub App on "
 			f"your registry repo, then retry:\n\n  {install_url}\n\n"
 			"After installing, this MCP server will auto-detect your repo via "
 			"webhook within a few seconds."
 		)
-	return link, ""
+	return link
+
+
+def _format_skills_table(repo: str, summaries: list[SkillSummary]) -> str:
+	"""Render the registry listing as a markdown table for MCP clients."""
+	plural = "" if len(summaries) == 1 else "s"
+	lines = [
+		f"Registry: `{repo}` ({len(summaries)} skill{plural})",
+		"",
+		"| slug | name | description |",
+		"| --- | --- | --- |",
+	]
+	for s in summaries:
+		desc = s.description.replace("|", "\\|").replace("\n", " ")
+		lines.append(f"| `{s.slug}` | {s.name} | {desc} |")
+	lines.append("")
+	lines.append('Use `get_skill(slug="<slug>")` to read the SKILL.md for any row above.')
+	return "\n".join(lines)
 
 
 # ------------------------------------------------------------- custom routes
