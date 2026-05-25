@@ -208,6 +208,37 @@ The hosted MCP does not cache between requests — every `get_skill` reads throu
 
 ---
 
+## 4.1 Analytics (PostHog)
+
+The hosted server captures a small, fixed set of product-usage events to PostHog. Implementation lives in `infa-not-for-users/skills_mcp/analytics.py`; events are emitted from `remote_server.py` (tool handlers) and `webhooks.py` (GitHub App lifecycle).
+
+**Configured via two env vars** (both listed in `infa-not-for-users/.env.example`):
+
+| Var | Required | Default | Notes |
+|---|---|---|---|
+| `POSTHOG_PROJECT_TOKEN` | No | unset → no-op stub | When unset, `analytics.py` returns a `_NoopPosthog` instance whose `capture()` swallows every call. The server boots and runs identically with or without it — analytics is never required. |
+| `POSTHOG_HOST` | No | PostHog SDK default (US cloud) | Override for EU cloud (`https://eu.i.posthog.com`) or self-hosted instances. |
+
+**Events emitted.** `distinct_id` is the GitHub OAuth `sub` claim (a stable numeric user ID); the two webhook signals that fire outside an authenticated MCP session use the literal `"server"` so they bucket together in PostHog rather than polluting per-user funnels.
+
+| Event | Where | Properties | Question it answers |
+|---|---|---|---|
+| `list_skills_called` | `remote_server.list_skills` | `skill_count` | List vs. get ratio; registry sizes |
+| `get_skill_called` | `remote_server.get_skill` | `slug`, `found` (bool) | Hot skills; "not found" rate (data-quality signal) |
+| `user_not_linked` | `remote_server._track_not_linked` | `tool_name` | Activation funnel: authenticated but no GitHub App install |
+| `repo_linked` | `webhooks._adopt_best_repo` | `installation_id`, `repo_name` | Funnel completion |
+| `repo_unlinked` | `webhooks._on_installation_removed` | `installation_id` | Churn signal |
+| `webhook_deduped` | `webhooks.__call__` | `event_type` | Replay-protection effectiveness |
+| `webhook_rejected` | `webhooks.__call__` | (none) | Bad-signature volume — security signal |
+
+**Why nothing more.** No `SKILL.md` content, no full `owner/repo` strings, no OAuth tokens, no GitHub App private-key material. `repo_linked` carries only the *trailing* repo name, not the owner. `webhook_rejected` deliberately carries no properties so attacker-controlled bytes can't reach the dashboards.
+
+**Why no-op fallback.** Analytics is a soft dependency. CI, local dev, and any deploy that forgets the token all see the noop client. A misconfigured PostHog instance cannot break tool calls — the worst case is missing telemetry.
+
+**Exception autocapture is on** (`enable_exception_autocapture=True` in `analytics.py`). This is intentional and **not** a replacement for Railway logs — it surfaces server exceptions in the PostHog activity view so usage signals and crashes show up next to each other. Railway logs remain the source of truth for stack traces and ops forensics.
+
+---
+
 ## 5. Configuration resolution
 
 | Source | Wins | Notes |

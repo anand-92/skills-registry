@@ -21,7 +21,7 @@ auto-deploys this folder on every push to `main`.
 | `Dockerfile` | Multi-stage build that bakes the wheel into a slim Python runtime. |
 | `railway.json` | Railway service config (DOCKERFILE builder, healthcheck, restart policy). |
 | `.dockerignore` | Build-context filter. |
-| `.env.example` | Required env vars at boot (`FASTMCP_*`, `GITHUB_APP_*`, `JWT_SIGNING_KEY`, `STORAGE_ENCRYPTION_KEY`). |
+| `.env.example` | Required env vars at boot (`FASTMCP_*`, `GITHUB_APP_*`, `JWT_SIGNING_KEY`, `STORAGE_ENCRYPTION_KEY`) plus optional `POSTHOG_PROJECT_TOKEN` / `POSTHOG_HOST` for analytics. |
 
 ## Production safeguards
 
@@ -37,6 +37,7 @@ and the per-piece details live next to the code:
 | GitHub fan-out cap | `skills_mcp/github_api.py` (`_FANOUT_CONCURRENCY = 8`) | Bounds concurrent SKILL.md fetches per `list_skills` so a 500-folder registry doesn't trip GitHub's secondary rate limit. |
 | Installation-token cache | `skills_mcp/github_app.py` (per-process dict + `asyncio.Lock`) | Caches installation access tokens until 60 s before `expires_at`. Cuts roughly half the GitHub round-trips out of the hot path. |
 | Webhook replay protection | `skills_mcp/linking.py:DeliveryStore` + `webhooks.py` | Dedupes by `X-GitHub-Delivery` within a 25-hour window so a captured signed payload (or a legitimate GitHub redelivery) can't re-mutate link state. |
+| PostHog analytics (optional) | `skills_mcp/analytics.py` | Shared client built once at import. Emits product-usage events (`list_skills_called`, `get_skill_called`, `user_not_linked`, `repo_linked`, `repo_unlinked`, `webhook_deduped`, `webhook_rejected`) plus PostHog SDK exception autocapture. Falls back to a no-op stub when `POSTHOG_PROJECT_TOKEN` is unset, so dev / CI never need it. See `docs/registry.md`. |
 
 **Why these numbers and not knobs.** Both read tools fan out to GitHub, so
 even a low MCP request rate maps to many GitHub calls. The 5-RPS limit is

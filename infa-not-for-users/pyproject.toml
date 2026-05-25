@@ -35,6 +35,7 @@ dependencies = [
     "cryptography>=42",
     "py-key-value-aio>=0.2",
     "starlette>=0.37",
+    "posthog>=3.0.0",
 ]
 
 [project.scripts]

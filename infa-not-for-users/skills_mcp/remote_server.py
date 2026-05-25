@@ -48,6 +48,7 @@ from starlette.requests import Request
 from starlette.responses import Response
 
 from . import __version__
+from .analytics import posthog_client
 from .github_api import SkillSummary, get_skill_md, list_skill_folders, slugify
 from .github_app import GitHubAppClient, GitHubAppCredentials
 from .linking import DeliveryStore, LinkedRepo, LinkStore
@@ -236,9 +237,15 @@ def _register_tools(
 	async def list_skills() -> str:
 		link = await _resolve_link(link_store, install_url=install_url)
 		if isinstance(link, str):
+			_track_not_linked(_current_user_id(), "list_skills")
 			return link
 		token = await app_client.mint_installation_token(link.installation_id)
 		summaries = await list_skill_folders(token, link.repo)
+		posthog_client.capture(
+			distinct_id=_current_user_id(),
+			event="list_skills_called",
+			properties={"skill_count": len(summaries)},
+		)
 		if not summaries:
 			return (
 				f"No skills found in `{link.repo}`. Add a skill with `SKILL.md` "
@@ -260,9 +267,16 @@ def _register_tools(
 	async def get_skill(slug: str) -> str:
 		link = await _resolve_link(link_store, install_url=install_url)
 		if isinstance(link, str):
+			_track_not_linked(_current_user_id(), "get_skill")
 			return link
 		token = await app_client.mint_installation_token(link.installation_id)
-		content = await get_skill_md(token, link.repo, slugify(slug))
+		normalized = slugify(slug)
+		content = await get_skill_md(token, link.repo, normalized)
+		posthog_client.capture(
+			distinct_id=_current_user_id(),
+			event="get_skill_called",
+			properties={"slug": normalized, "found": content is not None},
+		)
 		if content is None:
 			return f"Skill `{slug}` not found in `{link.repo}`."
 		return content
@@ -287,6 +301,23 @@ async def _resolve_link(link_store: LinkStore, *, install_url: str) -> LinkedRep
 			"webhook within a few seconds."
 		)
 	return link
+
+
+def _current_user_id() -> str:
+	"""Return the GitHub numeric user ID from the active OAuth token, or 'anonymous'."""
+	token = get_access_token()
+	if token is None:
+		return "anonymous"
+	sub = token.claims.get("sub") if token.claims else None
+	return str(sub) if sub else "anonymous"
+
+
+def _track_not_linked(user_id: str, tool_name: str) -> None:
+	posthog_client.capture(
+		distinct_id=user_id,
+		event="user_not_linked",
+		properties={"tool_name": tool_name},
+	)
 
 
 def _format_skills_table(repo: str, summaries: list[SkillSummary]) -> str:

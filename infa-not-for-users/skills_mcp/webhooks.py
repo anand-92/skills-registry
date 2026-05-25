@@ -39,6 +39,7 @@ from typing import Any
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
+from .analytics import posthog_client
 from .github_api import repo_has_skills
 from .github_app import GitHubAppClient, GitHubAppError
 from .linking import DeliveryStore, LinkedRepo, LinkStore
@@ -70,6 +71,10 @@ class WebhookHandler:
 		signature = request.headers.get("X-Hub-Signature-256", "")
 		if not _verify_signature(self._secret, body, signature):
 			log.warning("Rejected webhook with bad signature")
+			posthog_client.capture(
+				distinct_id="server",
+				event="webhook_rejected",
+			)
 			return JSONResponse({"error": "bad signature"}, status_code=401)
 
 		# Replay-protection check runs after signature verification: an
@@ -78,6 +83,12 @@ class WebhookHandler:
 		delivery_id = request.headers.get("X-GitHub-Delivery", "")
 		if delivery_id and await self._deliveries.seen(delivery_id):
 			log.info("Deduped webhook delivery %s", delivery_id)
+			event_header = request.headers.get("X-GitHub-Event", "")
+			posthog_client.capture(
+				distinct_id="server",
+				event="webhook_deduped",
+				properties={"event_type": event_header},
+			)
 			return JSONResponse({"deduped": delivery_id})
 
 		event = request.headers.get("X-GitHub-Event", "")
@@ -141,7 +152,13 @@ class WebhookHandler:
 	async def _on_installation_removed(self, payload: dict[str, Any]) -> None:
 		install = payload["installation"]
 		installation_id = int(install["id"])
+		user_id = await self._links.user_for_installation(installation_id)
 		await self._links.delete_installation(installation_id)
+		posthog_client.capture(
+			distinct_id=user_id if user_id is not None else "server",
+			event="repo_unlinked",
+			properties={"installation_id": installation_id},
+		)
 
 	async def _on_repos_changed(self, payload: dict[str, Any]) -> None:
 		install = payload["installation"]
@@ -179,6 +196,14 @@ class WebhookHandler:
 				repo=chosen.full_name,
 				default_branch=chosen.default_branch,
 			),
+		)
+		posthog_client.capture(
+			distinct_id=user_id,
+			event="repo_linked",
+			properties={
+				"installation_id": installation_id,
+				"repo_name": chosen.full_name.split("/")[-1],
+			},
 		)
 
 
