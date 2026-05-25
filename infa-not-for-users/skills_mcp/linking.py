@@ -11,6 +11,9 @@ State layout:
 * Collection ``installs``: ``installation_id (str) → user_id (str)`` (reverse
   lookup, populated by ``installation.created`` / ``installation.deleted``
   webhooks).
+* Collection ``webhook_deliveries``: ``delivery_id (str) → {seen_at: float}``
+  (replay protection for the ``/github/webhook`` route; see
+  :class:`DeliveryStore`).
 
 We keep ``installs`` as a reverse index so the webhook path can do its job
 without first knowing the user — GitHub sends us ``installation_id`` and
@@ -24,6 +27,7 @@ the async KV interface.
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import asdict, dataclass
 from typing import Any
 
@@ -31,6 +35,13 @@ log = logging.getLogger("skills_mcp.linking")
 
 _USERS_COLLECTION = "users"
 _INSTALLS_COLLECTION = "installs"
+_DELIVERIES_COLLECTION = "webhook_deliveries"
+
+# GitHub redelivers webhooks for up to 24 hours after the original send;
+# beyond that the delivery is dropped on GitHub's side, so there's no
+# point in remembering it any longer. Use 25h to give a small safety
+# margin on top of the documented window.
+_DELIVERY_TTL_S = 25 * 60 * 60
 
 
 @dataclass(frozen=True)
@@ -132,3 +143,55 @@ class LinkStore:
 			key=str(installation_id),
 		)
 		log.info("Dropped installation %s (user=%s)", installation_id, user_id)
+
+
+class DeliveryStore:
+	"""Tracks seen ``X-GitHub-Delivery`` IDs to make the webhook idempotent.
+
+	GitHub can re-deliver a webhook (manual replay from the dashboard, or
+	automatic retry on a non-2xx) and an attacker who captured a valid
+	signed payload could replay it. The signature check alone doesn't
+	prevent either case from re-mutating link state. We dedupe by the
+	per-delivery UUID GitHub stamps on every request.
+
+	The collection has no native TTL on py-key-value-aio's filetree
+	backend, so we record ``seen_at`` and prune lazily on lookup: any
+	entry older than :data:`_DELIVERY_TTL_S` is treated as "not seen"
+	and overwritten. That keeps state O(GitHub redelivery volume) over
+	any 25-hour window, which is bounded and small.
+	"""
+
+	def __init__(self, kv: Any) -> None:
+		self._kv = kv
+
+	async def seen(self, delivery_id: str) -> bool:
+		"""Return True iff this delivery ID was already processed recently.
+
+		Empty / missing IDs are *never* considered seen (so a request
+		without an ``X-GitHub-Delivery`` header is processed normally —
+		see :mod:`webhooks` for why GitHub will always send one).
+		"""
+		if not delivery_id:
+			return False
+		raw = await self._kv.get(collection=_DELIVERIES_COLLECTION, key=delivery_id)
+		if not isinstance(raw, dict):
+			return False
+		seen_at = raw.get("seen_at")
+		if not isinstance(seen_at, int | float):
+			# Corrupt row — treat as unseen and let ``mark`` overwrite it.
+			return False
+		return (time.time() - float(seen_at)) < _DELIVERY_TTL_S
+
+	async def mark(self, delivery_id: str) -> None:
+		"""Record that ``delivery_id`` was just processed.
+
+		No-op for empty IDs. Idempotent — re-marking an already-marked
+		delivery just refreshes the timestamp, which is harmless.
+		"""
+		if not delivery_id:
+			return
+		await self._kv.put(
+			collection=_DELIVERIES_COLLECTION,
+			key=delivery_id,
+			value={"seen_at": time.time()},
+		)

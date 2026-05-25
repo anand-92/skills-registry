@@ -166,6 +166,176 @@ async def test_with_retry_re_raises_non_retryable() -> None:
 	assert exc.value.status == 404
 
 
+# ------------------------------------------------------- installation-token cache
+
+
+async def test_installation_token_cached_within_ttl(
+	creds: GitHubAppCredentials,
+	monkeypatch: pytest.MonkeyPatch,
+) -> None:
+	"""Second mint within the TTL serves from cache, no extra GitHub call."""
+	calls = {"n": 0}
+
+	def handler(_request: httpx.Request) -> httpx.Response:
+		calls["n"] += 1
+		# expires_at far in the future ⇒ stays cached for both calls.
+		from datetime import datetime, timedelta, timezone
+
+		future = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
+		return httpx.Response(201, json={"token": f"tok-{calls['n']}", "expires_at": future})
+
+	_install_mock_transport(monkeypatch, handler)
+	client = GitHubAppClient(creds)
+	first = await client.mint_installation_token(42)
+	second = await client.mint_installation_token(42)
+	assert first == second == "tok-1"
+	assert calls["n"] == 1
+
+
+async def test_installation_token_refreshed_when_near_expiry(
+	creds: GitHubAppCredentials,
+	monkeypatch: pytest.MonkeyPatch,
+) -> None:
+	"""When the cached token is within the refresh-skew window, re-mint."""
+	calls = {"n": 0}
+
+	def handler(_request: httpx.Request) -> httpx.Response:
+		calls["n"] += 1
+		from datetime import datetime, timedelta, timezone
+
+		# 30s out — inside our 60s refresh skew, so the next call must
+		# trigger a fresh mint instead of returning the cached value.
+		soon = (datetime.now(timezone.utc) + timedelta(seconds=30)).isoformat()
+		return httpx.Response(201, json={"token": f"tok-{calls['n']}", "expires_at": soon})
+
+	_install_mock_transport(monkeypatch, handler)
+	client = GitHubAppClient(creds)
+	first = await client.mint_installation_token(7)
+	second = await client.mint_installation_token(7)
+	# Both calls minted because the cache entry is always considered stale.
+	assert first == "tok-1"
+	assert second == "tok-2"
+	assert calls["n"] == 2
+
+
+async def test_installation_token_cache_is_per_installation(
+	creds: GitHubAppCredentials,
+	monkeypatch: pytest.MonkeyPatch,
+) -> None:
+	"""Different installation IDs have independent cache slots."""
+	calls = {"n": 0}
+
+	def handler(request: httpx.Request) -> httpx.Response:
+		calls["n"] += 1
+		from datetime import datetime, timedelta, timezone
+
+		future = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
+		# Bake the path segment into the token so we can tell them apart.
+		install_id = str(request.url).rsplit("/access_tokens", 1)[0].rsplit("/", 1)[1]
+		return httpx.Response(201, json={"token": f"tok-{install_id}", "expires_at": future})
+
+	_install_mock_transport(monkeypatch, handler)
+	client = GitHubAppClient(creds)
+	t1 = await client.mint_installation_token(1)
+	t2 = await client.mint_installation_token(2)
+	# Cache hits on a re-request for each id.
+	again_1 = await client.mint_installation_token(1)
+	again_2 = await client.mint_installation_token(2)
+	assert t1 == again_1 == "tok-1"
+	assert t2 == again_2 == "tok-2"
+	# Two fetches total — one per distinct installation_id.
+	assert calls["n"] == 2
+
+
+async def test_installation_token_lock_dedupes_concurrent_mints(
+	creds: GitHubAppCredentials,
+	monkeypatch: pytest.MonkeyPatch,
+) -> None:
+	"""asyncio.gather of N first-time mints results in exactly one HTTP call.
+
+	The cache lock funnels concurrent first-time requests for the same
+	installation through a single mint; the waiters that wake up re-check
+	the cache, find a populated entry, and return immediately. Without
+	the lock, all N callers would race past the empty cache check and
+	each fire a mint round-trip — burning credentials and pressuring
+	GitHub's per-installation limits.
+	"""
+	import asyncio
+
+	calls = {"n": 0}
+
+	def handler(_request: httpx.Request) -> httpx.Response:
+		calls["n"] += 1
+		return httpx.Response(
+			201,
+			json={
+				"token": "tok-only",
+				"expires_at": "2099-01-01T00:00:00+00:00",
+			},
+		)
+
+	_install_mock_transport(monkeypatch, handler)
+	client = GitHubAppClient(creds)
+	tokens = await asyncio.gather(
+		*(client.mint_installation_token(99) for _ in range(5)),
+	)
+	assert all(t == "tok-only" for t in tokens)
+	# All five callers funnel through the lock; only one mint hits the wire.
+	assert calls["n"] == 1
+
+
+async def test_installation_token_cache_hit_does_not_take_lock(
+	creds: GitHubAppCredentials,
+	monkeypatch: pytest.MonkeyPatch,
+) -> None:
+	"""Cache hits bypass the lock entirely (double-checked locking).
+
+	Without this, a slow first-time mint for one installation would
+	serialize cache hits for every other installation behind it. We
+	prove the hot path is lockless by holding the lock for the whole
+	test and confirming a pre-populated cache entry still returns
+	immediately.
+	"""
+	# Prime the cache without going through the network.
+	client = GitHubAppClient(creds)
+	client._token_cache[42] = ("primed-token", time.monotonic() + 3600)
+
+	# Hold the lock for the duration of the assertion. If the hot path
+	# touches the lock, this await will deadlock and the test times out.
+	async with client._cache_lock:
+		token = await client.mint_installation_token(42)
+	assert token == "primed-token"
+
+
+# ----------------------------------------------------- _ttl_from_expires_at
+
+
+def test_ttl_handles_naive_datetime_without_crashing() -> None:
+	"""Naive ISO timestamps (no tz suffix) fall back instead of crashing.
+
+	GitHub's ``expires_at`` is supposed to be tz-aware, but a malformed
+	response without the ``Z`` suffix would otherwise raise ``TypeError``
+	on the naive-vs-aware datetime subtraction. The function's docstring
+	promises a graceful fall-back for any malformed input.
+	"""
+	from skills_mcp.github_app import _TOKEN_DEFAULT_TTL_S, _ttl_from_expires_at
+
+	assert _ttl_from_expires_at("2024-06-01T12:34:56") == _TOKEN_DEFAULT_TTL_S
+
+
+def test_ttl_handles_garbage_string() -> None:
+	from skills_mcp.github_app import _TOKEN_DEFAULT_TTL_S, _ttl_from_expires_at
+
+	assert _ttl_from_expires_at("not-a-timestamp") == _TOKEN_DEFAULT_TTL_S
+
+
+def test_ttl_handles_missing_value() -> None:
+	from skills_mcp.github_app import _TOKEN_DEFAULT_TTL_S, _ttl_from_expires_at
+
+	assert _ttl_from_expires_at(None) == _TOKEN_DEFAULT_TTL_S
+	assert _ttl_from_expires_at("") == _TOKEN_DEFAULT_TTL_S
+
+
 # ------------------------------------------------------------ helpers
 
 

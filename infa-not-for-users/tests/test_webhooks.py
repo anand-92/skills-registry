@@ -18,7 +18,7 @@ from starlette.responses import Response
 from starlette.routing import Route
 
 from skills_mcp.github_app import GitHubAppClient, GitHubAppCredentials, InstallationRepo
-from skills_mcp.linking import LinkedRepo, LinkStore
+from skills_mcp.linking import DeliveryStore, LinkedRepo, LinkStore
 from skills_mcp.webhooks import WebhookHandler
 
 
@@ -28,8 +28,18 @@ def secret() -> str:
 
 
 @pytest.fixture
-def link_store() -> LinkStore:
-	return LinkStore(MemoryStore())
+def kv() -> MemoryStore:
+	return MemoryStore()
+
+
+@pytest.fixture
+def link_store(kv: MemoryStore) -> LinkStore:
+	return LinkStore(kv)
+
+
+@pytest.fixture
+def delivery_store(kv: MemoryStore) -> DeliveryStore:
+	return DeliveryStore(kv)
 
 
 @pytest.fixture
@@ -41,16 +51,31 @@ def app_client_stub() -> GitHubAppClient:
 
 
 def test_handler_rejects_empty_secret(
-	app_client_stub: GitHubAppClient, link_store: LinkStore
+	app_client_stub: GitHubAppClient,
+	link_store: LinkStore,
+	delivery_store: DeliveryStore,
 ) -> None:
 	with pytest.raises(ValueError, match="secret"):
-		WebhookHandler(secret="", app_client=app_client_stub, link_store=link_store)
+		WebhookHandler(
+			secret="",
+			app_client=app_client_stub,
+			link_store=link_store,
+			delivery_store=delivery_store,
+		)
 
 
 async def test_webhook_rejects_bad_signature(
-	secret: str, app_client_stub: GitHubAppClient, link_store: LinkStore
+	secret: str,
+	app_client_stub: GitHubAppClient,
+	link_store: LinkStore,
+	delivery_store: DeliveryStore,
 ) -> None:
-	handler = WebhookHandler(secret=secret, app_client=app_client_stub, link_store=link_store)
+	handler = WebhookHandler(
+		secret=secret,
+		app_client=app_client_stub,
+		link_store=link_store,
+		delivery_store=delivery_store,
+	)
 	body = b'{"action":"created"}'
 	request = _request(body, signature="sha256=wrong", event="installation")
 	response = await handler(request)
@@ -58,9 +83,17 @@ async def test_webhook_rejects_bad_signature(
 
 
 async def test_webhook_accepts_ignored_event(
-	secret: str, app_client_stub: GitHubAppClient, link_store: LinkStore
+	secret: str,
+	app_client_stub: GitHubAppClient,
+	link_store: LinkStore,
+	delivery_store: DeliveryStore,
 ) -> None:
-	handler = WebhookHandler(secret=secret, app_client=app_client_stub, link_store=link_store)
+	handler = WebhookHandler(
+		secret=secret,
+		app_client=app_client_stub,
+		link_store=link_store,
+		delivery_store=delivery_store,
+	)
 	body = b'{"action":"ping"}'
 	request = _request(body, signature=_sig(secret, body), event="ping")
 	response = await handler(request)
@@ -72,6 +105,7 @@ async def test_installation_created_links_repo_with_skills(
 	secret: str,
 	app_client_stub: GitHubAppClient,
 	link_store: LinkStore,
+	delivery_store: DeliveryStore,
 	monkeypatch: pytest.MonkeyPatch,
 ) -> None:
 	monkeypatch.setattr(
@@ -100,7 +134,12 @@ async def test_installation_created_links_repo_with_skills(
 		),
 	)
 
-	handler = WebhookHandler(secret=secret, app_client=app_client_stub, link_store=link_store)
+	handler = WebhookHandler(
+		secret=secret,
+		app_client=app_client_stub,
+		link_store=link_store,
+		delivery_store=delivery_store,
+	)
 	body = json.dumps(
 		{
 			"action": "created",
@@ -119,9 +158,15 @@ async def test_installation_deleted_clears_link(
 	secret: str,
 	app_client_stub: GitHubAppClient,
 	link_store: LinkStore,
+	delivery_store: DeliveryStore,
 ) -> None:
 	await link_store.set_link("u-9", LinkedRepo(99, "a/b", "main"))
-	handler = WebhookHandler(secret=secret, app_client=app_client_stub, link_store=link_store)
+	handler = WebhookHandler(
+		secret=secret,
+		app_client=app_client_stub,
+		link_store=link_store,
+		delivery_store=delivery_store,
+	)
 	body = json.dumps(
 		{
 			"action": "deleted",
@@ -140,6 +185,7 @@ async def test_installation_created_picks_skills_named_repo_when_multiple(
 	secret: str,
 	app_client_stub: GitHubAppClient,
 	link_store: LinkStore,
+	delivery_store: DeliveryStore,
 	monkeypatch: pytest.MonkeyPatch,
 ) -> None:
 	monkeypatch.setattr(
@@ -184,7 +230,12 @@ async def test_installation_created_picks_skills_named_repo_when_multiple(
 		),
 	)
 
-	handler = WebhookHandler(secret=secret, app_client=app_client_stub, link_store=link_store)
+	handler = WebhookHandler(
+		secret=secret,
+		app_client=app_client_stub,
+		link_store=link_store,
+		delivery_store=delivery_store,
+	)
 	body = json.dumps(
 		{
 			"action": "created",
@@ -200,7 +251,10 @@ async def test_installation_created_picks_skills_named_repo_when_multiple(
 
 
 async def test_handler_works_when_mounted_as_starlette_route(
-	secret: str, app_client_stub: GitHubAppClient, link_store: LinkStore
+	secret: str,
+	app_client_stub: GitHubAppClient,
+	link_store: LinkStore,
+	delivery_store: DeliveryStore,
 ) -> None:
 	"""Regression test for the production-side mount path.
 
@@ -216,7 +270,12 @@ async def test_handler_works_when_mounted_as_starlette_route(
 	reproduces that mount path and asserts a real POST through the ASGI
 	stack returns 401 (bad signature) rather than 500.
 	"""
-	handler = WebhookHandler(secret=secret, app_client=app_client_stub, link_store=link_store)
+	handler = WebhookHandler(
+		secret=secret,
+		app_client=app_client_stub,
+		link_store=link_store,
+		delivery_store=delivery_store,
+	)
 
 	async def endpoint(request: Request) -> Response:
 		return await handler(request)
@@ -236,6 +295,100 @@ async def test_handler_works_when_mounted_as_starlette_route(
 	assert resp.status_code == 401
 
 
+async def test_replayed_delivery_is_deduped(
+	secret: str,
+	app_client_stub: GitHubAppClient,
+	link_store: LinkStore,
+	delivery_store: DeliveryStore,
+) -> None:
+	"""Re-delivering the same X-GitHub-Delivery short-circuits.
+
+	The second call must return 200 with a ``deduped`` body and must NOT
+	re-run the handler logic — we verify that by pre-populating the link
+	store and confirming it's untouched by a replay of an
+	``installation.deleted`` payload that would otherwise wipe it.
+	"""
+	await link_store.set_link("u-77", LinkedRepo(77, "a/b", "main"))
+	handler = WebhookHandler(
+		secret=secret,
+		app_client=app_client_stub,
+		link_store=link_store,
+		delivery_store=delivery_store,
+	)
+	body = json.dumps(
+		{
+			"action": "deleted",
+			"installation": {"id": 77, "account": {"id": 77}},
+		}
+	).encode("utf-8")
+
+	# First delivery: handler runs, link is dropped, delivery is marked.
+	first = await handler(
+		_request(body, signature=_sig(secret, body), event="installation", delivery_id="d-1")
+	)
+	assert first.status_code == 200
+	assert await link_store.get_link("u-77") is None
+
+	# Re-link the user so we can prove the replay doesn't re-mutate state.
+	await link_store.set_link("u-77", LinkedRepo(77, "a/b", "main"))
+
+	# Replay the exact same delivery — should be a no-op dedupe response.
+	replay = await handler(
+		_request(body, signature=_sig(secret, body), event="installation", delivery_id="d-1")
+	)
+	assert replay.status_code == 200
+	assert b"deduped" in replay.body
+	# Link still present — replay did not run the deleted handler again.
+	assert await link_store.get_link("u-77") is not None
+
+
+async def test_delivery_marks_after_ignored_event(
+	secret: str,
+	app_client_stub: GitHubAppClient,
+	link_store: LinkStore,
+	delivery_store: DeliveryStore,
+) -> None:
+	"""Ignored events still consume the delivery ID so replays no-op."""
+	handler = WebhookHandler(
+		secret=secret,
+		app_client=app_client_stub,
+		link_store=link_store,
+		delivery_store=delivery_store,
+	)
+	body = b'{"action":"ping"}'
+	first = await handler(
+		_request(body, signature=_sig(secret, body), event="ping", delivery_id="d-9")
+	)
+	assert first.status_code == 200
+	assert b"ignored" in first.body
+
+	replay = await handler(
+		_request(body, signature=_sig(secret, body), event="ping", delivery_id="d-9")
+	)
+	assert b"deduped" in replay.body
+
+
+async def test_missing_delivery_header_does_not_dedupe(
+	secret: str,
+	app_client_stub: GitHubAppClient,
+	link_store: LinkStore,
+	delivery_store: DeliveryStore,
+) -> None:
+	"""Two payloads without a delivery ID both run (no dedupe key)."""
+	handler = WebhookHandler(
+		secret=secret,
+		app_client=app_client_stub,
+		link_store=link_store,
+		delivery_store=delivery_store,
+	)
+	body = b'{"action":"ping"}'
+	# Both should hit the ignored-event branch with no dedupe in between.
+	first = await handler(_request(body, signature=_sig(secret, body), event="ping"))
+	second = await handler(_request(body, signature=_sig(secret, body), event="ping"))
+	assert b"ignored" in first.body
+	assert b"ignored" in second.body
+
+
 # ------------------------------------------------------------ helpers
 
 
@@ -246,11 +399,23 @@ def _sig(secret: str, body: bytes) -> str:
 	return "sha256=" + hmac.new(secret.encode("utf-8"), body, hashlib.sha256).hexdigest()
 
 
-def _request(body: bytes, *, signature: str, event: str) -> Request:
-	"""Build a minimal Starlette Request that .body() will return ``body`` for."""
+def _request(body: bytes, *, signature: str, event: str, delivery_id: str = "") -> Request:
+	"""Build a minimal Starlette Request that .body() will return ``body`` for.
+
+	``delivery_id`` becomes the ``X-GitHub-Delivery`` header (empty string
+	omits the header, which is what older tests pre-dating dedupe expect).
+	"""
 
 	async def receive() -> dict[str, Any]:
 		return {"type": "http.request", "body": body, "more_body": False}
+
+	headers: list[tuple[bytes, bytes]] = [
+		(b"x-hub-signature-256", signature.encode("ascii")),
+		(b"x-github-event", event.encode("ascii")),
+		(b"content-type", b"application/json"),
+	]
+	if delivery_id:
+		headers.append((b"x-github-delivery", delivery_id.encode("ascii")))
 
 	scope = {
 		"type": "http",
@@ -259,11 +424,7 @@ def _request(body: bytes, *, signature: str, event: str) -> Request:
 		"raw_path": b"/github/webhook",
 		"query_string": b"",
 		"root_path": "",
-		"headers": [
-			(b"x-hub-signature-256", signature.encode("ascii")),
-			(b"x-github-event", event.encode("ascii")),
-			(b"content-type", b"application/json"),
-		],
+		"headers": headers,
 	}
 	return Request(scope, receive)  # type: ignore[arg-type]
 

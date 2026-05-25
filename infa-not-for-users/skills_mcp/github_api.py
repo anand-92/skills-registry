@@ -7,9 +7,11 @@ to chase tree SHAs for read-only operations. (Writes would still want the
 Git Data API for atomicity, but remote v1 is read-only.)
 
 Network rules: one ``AsyncClient`` per public call, 10s default timeout, no
-internal retries. Per-folder ``SKILL.md`` fetches run in parallel via
-``asyncio.gather`` so a registry with N skills costs ~N concurrent requests,
-not N sequential ones.
+internal retries. Per-folder ``SKILL.md`` fetches run in parallel but are
+bounded by :data:`_FANOUT_CONCURRENCY`. The cap matters because a registry
+with hundreds of folders would otherwise burst hundreds of concurrent calls
+into GitHub's Contents API and trip the secondary rate limit (≈ 80 RPS per
+source IP); the MCP-level rate limiter is per-user, not per-GitHub-call.
 """
 
 from __future__ import annotations
@@ -31,6 +33,13 @@ log = logging.getLogger("skills_mcp.github_api")
 _GITHUB_API = "https://api.github.com"
 _API_VERSION = "2022-11-28"
 _SLUG_RE = re.compile(r"[^a-z0-9]+")
+
+# Cap on concurrent SKILL.md fetches per ``list_skill_folders`` /
+# ``repo_has_skills`` invocation. Set to 8 because (a) it's the httpx
+# default connection-pool soft limit, so we don't pay reconnection cost,
+# and (b) it keeps even a 500-folder registry under GitHub's secondary
+# rate-limit headroom.
+_FANOUT_CONCURRENCY = 8
 
 
 def slugify(name: str) -> str:
@@ -61,16 +70,19 @@ async def list_skill_folders(
 	"""Enumerate top-level folders in ``repo`` that contain a ``SKILL.md``.
 
 	Skips dotfolders and well-known noise (``node_modules``, ``__pycache__``).
-	Each entry is hydrated by reading the folder's ``SKILL.md`` in parallel.
+	Each entry is hydrated by reading the folder's ``SKILL.md`` in parallel,
+	but parallelism is capped at :data:`_FANOUT_CONCURRENCY` so a large
+	registry can't burst hundreds of simultaneous calls into GitHub.
 	A folder without ``SKILL.md`` is silently dropped — it's not a skill.
 	"""
+	sem = asyncio.Semaphore(_FANOUT_CONCURRENCY)
 	async with httpx.AsyncClient(timeout=timeout_s) as http:
 		entries = await _contents(http, repo, "", token)
 		if not isinstance(entries, list):
 			return []
 		folders = [e["name"] for e in entries if _is_skill_folder_entry(e)]
 		results = await asyncio.gather(
-			*(_summarize_folder(http, repo, name, token) for name in folders),
+			*(_summarize_folder(http, repo, name, token, sem) for name in folders),
 			return_exceptions=True,
 		)
 	summaries: list[SkillSummary] = []
@@ -103,8 +115,11 @@ async def repo_has_skills(token: str, repo: str, *, timeout_s: float = 10.0) -> 
 	"""Cheap "does this repo look like a skills registry?" check.
 
 	True iff the top-level listing contains at least one folder with a
-	``SKILL.md``. Used by the webhook handler to pick which repo to link
-	when an installation grants access to multiple.
+	``SKILL.md``. Probes folders sequentially and short-circuits on the
+	first hit so a repo whose first folder is a skill costs exactly two
+	GitHub calls, regardless of how many other folders sit alongside.
+	Used by the webhook handler to pick which repo to link when an
+	installation grants access to multiple.
 	"""
 	async with httpx.AsyncClient(timeout=timeout_s) as http:
 		entries = await _contents(http, repo, "", token, allow_404=True)
@@ -126,8 +141,12 @@ async def _summarize_folder(
 	repo: str,
 	slug: str,
 	token: str,
+	sem: asyncio.Semaphore,
 ) -> SkillSummary | None:
-	text = await _fetch_skill_md(http, repo, slug, token)
+	# Acquire under the per-call semaphore so concurrent folder probes
+	# stay below ``_FANOUT_CONCURRENCY``. Released automatically on exit.
+	async with sem:
+		text = await _fetch_skill_md(http, repo, slug, token)
 	if text is None:
 		return None
 	name, description = _parse_skill_md(text, default_name=slug)

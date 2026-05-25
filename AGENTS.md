@@ -45,14 +45,15 @@ install.sh               # POSIX `curl | sh` installer — the user-facing entry
 infa-not-for-users/      # Maintainer-only. Hosted MCP server source + Docker/Railway config.
   skills_mcp/            # Python package (no `src/` layout — packages = ["skills_mcp"] in pyproject.toml)
     __init__.py          # __version__ resolved from installed package metadata
-    remote_server.py     # `skill-registry-mcp` — FastMCP build_server() + main(); registers list_skills + get_skill
-    github_api.py        # Token-based GitHub REST helpers: list_skill_folders, get_skill_md, repo_has_skills
-    github_app.py        # GitHubAppClient: JWT minting, installation lookup, installation-token issuance, retry
-    linking.py           # LinkStore + LinkedRepo: {github_user → owner/repo} persistence on the Railway volume
+    remote_server.py     # `skill-registry-mcp` — FastMCP build_server() + main(); registers list_skills + get_skill, wires middleware stack + mask_error_details
+    middleware.py        # Production middleware stack: ErrorHandling → RateLimiting (per-user `sub` token bucket) → StructuredLogging
+    github_api.py        # Token-based GitHub REST helpers: list_skill_folders, get_skill_md, repo_has_skills. Fan-out capped at _FANOUT_CONCURRENCY (8) via asyncio.Semaphore
+    github_app.py        # GitHubAppClient: JWT minting, installation lookup, installation-token issuance with in-process TTL cache + asyncio.Lock, retry
+    linking.py           # LinkStore + LinkedRepo: {github_user → owner/repo} persistence on the Railway volume. DeliveryStore: webhook replay protection keyed on X-GitHub-Delivery
     setup_routes.py      # /setup/install + post-install landing routes (GitHub App install handoff)
-    webhooks.py          # /webhooks/github handler: parses `installation` events and writes to LinkStore
+    webhooks.py          # /webhooks/github handler: parses `installation` events and writes to LinkStore. Dedupes deliveries via DeliveryStore
     frontmatter.py       # parse_frontmatter / first_paragraph helpers used by github_api
-  tests/                 # pytest suite (~81 tests) covering frontmatter, github_api, github_app, linking, remote_server, setup_routes, webhooks
+  tests/                 # pytest suite (~102 tests) covering frontmatter, github_api, github_app, linking, middleware, rate_limiting, remote_server, setup_routes, webhooks
   pyproject.toml         # hatchling + static version + fastmcp + uvicorn + httpx + PyJWT + cryptography + py-key-value-aio + starlette
   Dockerfile             # uv → build wheel → install entry point → run skill-registry-mcp
   railway.json           # Railway service definition (volume mount at /data/oauth)
@@ -199,7 +200,22 @@ The CLI's `get` writes to `~/.cache/skills-mcp/skills/<slug>/` with a sibling `<
 2. SHA matches → return the cached path immediately.
 3. Otherwise wipe the folder and re-download.
 
-Force-pushes and any subtree change invalidate correctly. The hosted MCP does not cache between requests — every `get_skill` reads through to GitHub.
+Force-pushes and any subtree change invalidate correctly. The hosted MCP does not cache `SKILL.md` *content* between requests — every `get_skill` reads through to GitHub. It does, however, cache **installation tokens** in-process (see `GitHubAppClient`): tokens are good for ~1 hour, and re-minting one per request was previously paying a JWT sign + `POST /access_tokens` round-trip every tool call. Cache hit returns the existing token until 60 s before its `expires_at`; cache miss / near-expiry holds an `asyncio.Lock` so two concurrent first-time requests don't both burn a mint.
+
+### Production safeguards
+
+Every MCP request to the hosted server flows through three middleware in this order (see `infa-not-for-users/skills_mcp/middleware.py:build_middleware_stack`):
+
+1. **`ErrorHandlingMiddleware`** (outermost). Converts uncaught exceptions into MCP error responses, with `include_traceback=False` and `transform_errors=True`. Pairs with `mask_error_details=True` on the `FastMCP` constructor so raw `GitHubAppError("status=404 …")` text never bleeds into LLM-visible payloads. `ToolError` remains the escape hatch when you *do* want a specific message to reach the client.
+2. **`RateLimitingMiddleware`**. Token-bucket per authenticated GitHub user: **5 req/s sustained, 15-request burst**. `client_id_from_token` keys on the OAuth `sub` claim (`get_access_token().claims["sub"]`) so two users behind a shared NAT don't share a bucket and a malformed token falls back to a single `"anonymous"` bucket rather than gifting itself a fresh one. **Constants are hardcoded; tuning them is a code-review-gated change, not a Railway env flip.** Reasoning lives in `middleware.py`: read tools fan out to GitHub, so the MCP request rate is a leverage multiplier — 5 RPS sustained × the `list_skills` fan-out is already close to GitHub's per-installation REST budget, and 15-burst covers the typical Claude/Cursor session opening.
+3. **`StructuredLoggingMiddleware`** (innermost). Emits JSON per accepted request: client id, method, duration. Honors `SKILLS_LOG_LEVEL`. This is what makes the rate limit tunable — without it we can't see who's getting throttled or why.
+
+Two additional safeguards run outside the middleware chain:
+
+- **GitHub fan-out cap.** `list_skill_folders` and `repo_has_skills` would otherwise `asyncio.gather` over every top-level folder. A user with hundreds of skills could trip GitHub's secondary rate limit (≈80 RPS per source IP) all by themselves, locking their *own* installation out for a few minutes. `_FANOUT_CONCURRENCY = 8` enforces a per-call `asyncio.Semaphore`.
+- **Webhook delivery-ID dedupe.** `WebhookHandler` reads `X-GitHub-Delivery` after signature verification, checks `DeliveryStore.seen(...)`, and short-circuits with `{"deduped": <id>}` on a hit. Bad payloads and ignored events are marked seen too (GitHub stops re-sending broken events; legit retries no-op). Transient `GitHubAppError`s are *not* marked seen so the next retry actually runs. TTL is 25 h to cover GitHub's 24 h redelivery window with margin.
+
+**Single-instance assumption.** Both `FileTreeStore` (OAuth + linking + `webhook_deliveries`) and the installation-token cache assume one Railway container. Horizontal scale requires swapping `FileTreeStore` for a shared backend (e.g. Redis via `py-key-value-aio`) **and** moving the token cache out of process in the same change — they're correctness-coupled. Until then, scale vertically.
 
 ### Single source of truth for agent dot-folders
 
@@ -211,10 +227,11 @@ Force-pushes and any subtree change invalidate correctly. The hosted MCP does no
 
 | Symbol | File | Role |
 |---|---|---|
-| `build_server()` | `infa-not-for-users/skills_mcp/remote_server.py` | Constructs the FastMCP server, validates settings at boot, and registers the two read-only tools (`list_skills`, `get_skill`). Returns `(FastMCP, LinkStore, GitHubAppClient)`. |
-| `list_skill_folders` / `get_skill_md` / `repo_has_skills` | `infa-not-for-users/skills_mcp/github_api.py` | Token-based GitHub REST helpers used by the hosted server's read tools. No `gh` binary, no `git`. |
-| `GitHubAppClient` | `infa-not-for-users/skills_mcp/github_app.py` | Mints the JWT, looks up the installation for a given user, and exchanges JWT → installation access token per request. Owns the retry policy. |
-| `LinkStore` / `LinkedRepo` | `infa-not-for-users/skills_mcp/linking.py` | Persists `{github_user → owner/repo}` on the Railway-backed volume. Populated by the `installation` webhook (`webhooks.py`) and read on every tool call. |
+| `build_server()` | `infa-not-for-users/skills_mcp/remote_server.py` | Constructs the FastMCP server, validates settings at boot, registers the two read-only tools (`list_skills`, `get_skill`), and wires the production middleware stack + `mask_error_details=True`. Returns `(FastMCP, LinkStore, GitHubAppClient)`. |
+| `build_middleware_stack` / `client_id_from_token` | `infa-not-for-users/skills_mcp/middleware.py` | Returns the ordered list `[ErrorHandlingMiddleware, RateLimitingMiddleware, StructuredLoggingMiddleware]`. The rate limiter keys on the OAuth `sub` claim (5 RPS sustained, 15-request burst, per user — hardcoded). |
+| `list_skill_folders` / `get_skill_md` / `repo_has_skills` | `infa-not-for-users/skills_mcp/github_api.py` | Token-based GitHub REST helpers used by the hosted server's read tools. No `gh` binary, no `git`. SKILL.md fan-out bounded by `_FANOUT_CONCURRENCY = 8` via `asyncio.Semaphore`. |
+| `GitHubAppClient` | `infa-not-for-users/skills_mcp/github_app.py` | Mints the JWT, looks up the installation for a given user, and exchanges JWT → installation access token. Caches installation tokens in-process per `installation_id` (refresh 60s before `expires_at`) under an `asyncio.Lock` so concurrent first-time mints fan into one HTTP call. Owns the retry policy. |
+| `LinkStore` / `LinkedRepo` / `DeliveryStore` | `infa-not-for-users/skills_mcp/linking.py` | Persists `{github_user → owner/repo}` on the Railway-backed volume. `DeliveryStore` records seen `X-GitHub-Delivery` IDs for 25 hours so webhook replays (legitimate or hostile) are no-ops instead of state mutations. |
 | `parse_frontmatter` / `first_paragraph` | `infa-not-for-users/skills_mcp/frontmatter.py` | YAML-ish frontmatter parser + description fallback used by `github_api` to render `list_skills` rows. |
 | `registry.Client` | `cli/internal/registry/registry.go` | The Go-side GitHub Git Data API client: `Publish`, `Delete`, `PushTreeViaGit`, list/get mirror operations. All CLI writes flow through here. |
 | `validateRelPath` | `cli/internal/registry/registry.go` | Path-traversal guard for repo-relative paths. Rejects `..`, absolute paths, and empty strings. Applied to every file before blob upload or `git add`. |
@@ -235,7 +252,7 @@ Force-pushes and any subtree change invalidate correctly. The hosted MCP does no
 
 ## Testing
 
-- **Python (hosted server):** 81 tests covering `frontmatter`, `github_api`, `github_app`, `linking`, `remote_server`, `setup_routes`, `webhooks`. GitHub REST calls are stubbed with `httpx.MockTransport`; OAuth + GitHub App flows use scripted JWT fixtures. Run from `infa-not-for-users/`:
+- **Python (hosted server):** 102 tests covering `frontmatter`, `github_api` (incl. fan-out concurrency assertion), `github_app` (incl. installation-token cache + lock), `linking`, `middleware`, `rate_limiting` (per-user isolation + burst behavior against the real FastMCP limiter), `remote_server` (incl. middleware stack order + `mask_error_details`), `setup_routes`, `webhooks` (incl. delivery-ID dedupe). GitHub REST calls are stubbed with `httpx.MockTransport`; OAuth + GitHub App flows use scripted JWT fixtures. Run from `infa-not-for-users/`:
   ```bash
   cd infa-not-for-users && uv run pytest -v --cov=skills_mcp --cov-report=term-missing
   ```
@@ -283,7 +300,7 @@ Force-pushes and any subtree change invalidate correctly. The hosted MCP does no
 
 ## Security Notes
 
-- **Hosted MCP server (Python):** runs in a Docker container with no `gh`, no `git`, no SSH, no user shell state. All GitHub I/O uses installation-scoped GitHub App tokens fetched per request via `GitHubAppClient`. OAuth state + repo-link table live on a Railway-backed volume at `/data/oauth/`. The server is **read-only** — it never mutates the user's repo, so it has no need for write-path safety checks.
+- **Hosted MCP server (Python):** runs in a Docker container with no `gh`, no `git`, no SSH, no user shell state. All GitHub I/O uses installation-scoped GitHub App tokens fetched (and cached) via `GitHubAppClient`. OAuth state, the repo-link table, and the webhook delivery-ID dedupe collection live on a Railway-backed volume at `/data/oauth/`. The server is **read-only** — it never mutates the user's repo, so it has no need for write-path safety checks. Per-user rate limiting, internal-error masking, webhook replay protection, and GitHub fan-out capping are all in place; see "Production safeguards" above.
 - **CLI writes (Go):** `registry.Client.Publish` and `registry.Client.Delete` shell out to `gh api` (no token in argv/env/disk — `gh` resolves credentials from its own store). `registry.Client.PushTreeViaGit` shells out to `git` over HTTPS with credentials resolved by `gh auth setup-git`. The bootstrap tempdir is `os.RemoveAll`'d on exit.
 - `subprocess.run()` (Python) and `exec.CommandContext()` (Go) are used with list args; no `shell=True` / `sh -c`.
 - **Path-traversal guard (Go):** `validateRelPath` rejects `..`, `../`, `/../`, absolute paths, and empty strings; it normalizes separators and re-checks via `filepath.Clean`. Applied to every file before blob upload (`Publish`) and before `git add` (`PushTreeViaGit`).
