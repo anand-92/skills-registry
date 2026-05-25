@@ -19,5 +19,3 @@ uv.lock
 ruff.toml
 railway.json
 .env.example
-HANDOFF.md
-REMOTE_MCP_PLAN.md

@@ -16,7 +16,7 @@ Wire-up:
   registry repo.
 * :class:`webhooks.WebhookHandler` to react to install / uninstall events.
 
-Two MCP tools (read-only v1 per ``REMOTE_MCP_PLAN.md``):
+Two MCP tools (read-only):
 
 * ``list_skills`` → markdown table from the linked repo.
 * ``get_skill(slug)`` → verbatim ``SKILL.md`` contents.

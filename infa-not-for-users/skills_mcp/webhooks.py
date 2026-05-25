@@ -1,6 +1,6 @@
 """GitHub App webhook handler mounted at ``/github/webhook``.
 
-Subscribed events (per ``REMOTE_MCP_PLAN.md``):
+Subscribed events:
 
 * ``installation`` — ``created`` / ``deleted`` / ``suspend`` / ``unsuspend``.
 * ``installation_repositories`` — ``added`` / ``removed``.

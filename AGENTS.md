@@ -57,8 +57,7 @@ infa-not-for-users/      # Maintainer-only. Hosted MCP server source + Docker/Ra
   Dockerfile             # uv → build wheel → install entry point → run skill-registry-mcp
   railway.json           # Railway service definition (volume mount at /data/oauth)
   .env.example           # OAuth + GitHub App env var template (FASTMCP_*, GITHUB_APP_*, JWT_SIGNING_KEY, STORAGE_ENCRYPTION_KEY)
-  README.md              # Deployment + repo-link table notes (maintainer-facing)
-  HANDOFF.md             # Post-launch ops runbook (URLs, env vars, common operations, troubleshooting)
+  README.md              # Deployment + env-var notes (maintainer-facing)
 
 cli/                     # Separate Go module (own go.mod) — the user-facing binary.
   cmd/skill-registry/

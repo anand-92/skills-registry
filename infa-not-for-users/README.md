@@ -22,8 +22,6 @@ auto-deploys this folder on every push to `main`.
 | `railway.json` | Railway service config (DOCKERFILE builder, healthcheck, restart policy). |
 | `.dockerignore` | Build-context filter. |
 | `.env.example` | Required env vars at boot (`FASTMCP_*`, `GITHUB_APP_*`, `JWT_SIGNING_KEY`, `STORAGE_ENCRYPTION_KEY`). |
-| `HANDOFF.md` | Post-launch ops notes — production URLs, GH apps, env vars, common operations, where to look when things break. |
-| `REMOTE_MCP_PLAN.md` | The original design doc behind the remote-MCP pivot. Historical, occasionally still useful. |
 
 ## Local development
 
@@ -38,10 +36,9 @@ uv run pytest -q
 ## Deploy
 
 Railway is wired to the GitHub repo. Pushing to `main` triggers a build off
-this folder. After moving the server in here, the Railway service must have
-its **Root Directory** set to `infa-not-for-users` in the dashboard so the
-`Dockerfile` + `railway.json` resolve correctly. There is no release tag for
-the server — it just deploys on push.
-
-See `HANDOFF.md` for the full runbook (URLs, env vars, common operations,
-troubleshooting).
+this folder. The Railway service must have its **Root Directory** set to
+`infa-not-for-users` in the dashboard so the `Dockerfile` + `railway.json`
+resolve correctly, and a volume must be mounted at `/data` for the OAuth
+state and link table to persist across deploys. There is no release tag
+for the server — it just deploys on push. Required boot-time env vars are
+listed in `.env.example`.
