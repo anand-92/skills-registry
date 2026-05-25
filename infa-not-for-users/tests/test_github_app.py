@@ -254,11 +254,11 @@ async def test_installation_token_lock_dedupes_concurrent_mints(
 	"""asyncio.gather of N first-time mints results in exactly one HTTP call.
 
 	The cache lock funnels concurrent first-time requests for the same
-	installation through a single mint; the waiters that wake up find a
-	populated cache entry and return immediately. Without the lock, all
-	N callers would race past the empty cache check and each fire a
-	mint round-trip — burning credentials and pressuring GitHub's
-	per-installation limits.
+	installation through a single mint; the waiters that wake up re-check
+	the cache, find a populated entry, and return immediately. Without
+	the lock, all N callers would race past the empty cache check and
+	each fire a mint round-trip — burning credentials and pressuring
+	GitHub's per-installation limits.
 	"""
 	import asyncio
 
@@ -282,6 +282,58 @@ async def test_installation_token_lock_dedupes_concurrent_mints(
 	assert all(t == "tok-only" for t in tokens)
 	# All five callers funnel through the lock; only one mint hits the wire.
 	assert calls["n"] == 1
+
+
+async def test_installation_token_cache_hit_does_not_take_lock(
+	creds: GitHubAppCredentials,
+	monkeypatch: pytest.MonkeyPatch,
+) -> None:
+	"""Cache hits bypass the lock entirely (double-checked locking).
+
+	Without this, a slow first-time mint for one installation would
+	serialize cache hits for every other installation behind it. We
+	prove the hot path is lockless by holding the lock for the whole
+	test and confirming a pre-populated cache entry still returns
+	immediately.
+	"""
+	# Prime the cache without going through the network.
+	client = GitHubAppClient(creds)
+	client._token_cache[42] = ("primed-token", time.monotonic() + 3600)
+
+	# Hold the lock for the duration of the assertion. If the hot path
+	# touches the lock, this await will deadlock and the test times out.
+	async with client._cache_lock:
+		token = await client.mint_installation_token(42)
+	assert token == "primed-token"
+
+
+# ----------------------------------------------------- _ttl_from_expires_at
+
+
+def test_ttl_handles_naive_datetime_without_crashing() -> None:
+	"""Naive ISO timestamps (no tz suffix) fall back instead of crashing.
+
+	GitHub's ``expires_at`` is supposed to be tz-aware, but a malformed
+	response without the ``Z`` suffix would otherwise raise ``TypeError``
+	on the naive-vs-aware datetime subtraction. The function's docstring
+	promises a graceful fall-back for any malformed input.
+	"""
+	from skills_mcp.github_app import _TOKEN_DEFAULT_TTL_S, _ttl_from_expires_at
+
+	assert _ttl_from_expires_at("2024-06-01T12:34:56") == _TOKEN_DEFAULT_TTL_S
+
+
+def test_ttl_handles_garbage_string() -> None:
+	from skills_mcp.github_app import _TOKEN_DEFAULT_TTL_S, _ttl_from_expires_at
+
+	assert _ttl_from_expires_at("not-a-timestamp") == _TOKEN_DEFAULT_TTL_S
+
+
+def test_ttl_handles_missing_value() -> None:
+	from skills_mcp.github_app import _TOKEN_DEFAULT_TTL_S, _ttl_from_expires_at
+
+	assert _ttl_from_expires_at(None) == _TOKEN_DEFAULT_TTL_S
+	assert _ttl_from_expires_at("") == _TOKEN_DEFAULT_TTL_S
 
 
 # ------------------------------------------------------------ helpers

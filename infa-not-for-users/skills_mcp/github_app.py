@@ -100,8 +100,9 @@ class GitHubAppClient:
 	Installation tokens *are* cached because they're valid ~1 hour and
 	minting one costs a full round trip (JWT sign + POST to GitHub) that
 	would otherwise be paid on every single tool call. The cache is keyed
-	on ``installation_id`` and gated by an ``asyncio.Lock`` so concurrent
-	first-time requests don't both fire the mint.
+	on ``installation_id``. Cache hits return without acquiring any lock;
+	cache misses funnel through an ``asyncio.Lock`` (double-checked) so
+	concurrent first-time requests don't both fire the mint.
 	"""
 
 	def __init__(self, creds: GitHubAppCredentials, *, http_timeout_s: float = 10.0) -> None:
@@ -132,9 +133,16 @@ class GitHubAppClient:
 		"""Return a valid installation token, minting fresh only when needed.
 
 		Cache hit (token still valid for ``_TOKEN_REFRESH_SKEW_S``+ seconds)
-		returns immediately. Cache miss / expiry holds the lock so two
-		concurrent callers don't both burn a mint round-trip.
+		returns immediately without touching the lock — the hot path is
+		fully concurrent. Only cache miss / near-expiry takes the lock,
+		re-checks the cache (in case a peer just minted), and otherwise
+		burns a fresh mint round-trip. This double-checked pattern keeps
+		the "one mint per installation per refresh window" guarantee
+		without serializing the common case.
 		"""
+		cached = self._token_cache.get(installation_id)
+		if cached is not None and cached[1] - time.monotonic() > _TOKEN_REFRESH_SKEW_S:
+			return cached[0]
 		async with self._cache_lock:
 			cached = self._token_cache.get(installation_id)
 			if cached is not None and cached[1] - time.monotonic() > _TOKEN_REFRESH_SKEW_S:
@@ -218,13 +226,15 @@ def _ttl_from_expires_at(value: Any) -> float:
 		return _TOKEN_DEFAULT_TTL_S
 	try:
 		# ``fromisoformat`` accepts ``Z`` from Python 3.11+; normalize for
-		# 3.10 compatibility.
+		# 3.10 compatibility. The subtraction also lives in the try block
+		# because a parsed-but-naive datetime would raise ``TypeError`` when
+		# subtracted from the timezone-aware ``now`` — same fall-back applies.
 		normalized = value.replace("Z", "+00:00")
 		expires = _dt.datetime.fromisoformat(normalized)
-	except ValueError:
+		now = _dt.datetime.now(_dt.timezone.utc)
+		remaining = (expires - now).total_seconds()
+	except (ValueError, TypeError):
 		return _TOKEN_DEFAULT_TTL_S
-	now = _dt.datetime.now(_dt.timezone.utc)
-	remaining = (expires - now).total_seconds()
 	if remaining <= 0:
 		return _TOKEN_DEFAULT_TTL_S
 	return remaining
