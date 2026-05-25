@@ -120,6 +120,41 @@ async def test_build_server_wires_tools_and_routes(env: dict[str, str]) -> None:
 	assert app_client._creds.app_id == "3846201"
 
 
+async def test_build_server_registers_production_middleware(env: dict[str, str]) -> None:
+	"""The production middleware stack is registered in the documented order.
+
+	The order matters: error handling outermost, rate limiting next,
+	structured logging innermost (see ``skills_mcp.middleware``). A
+	silent reorder would tank either auditability or rate-limit safety,
+	so we pin the contract here.
+	"""
+	from fastmcp.server.middleware.error_handling import ErrorHandlingMiddleware
+	from fastmcp.server.middleware.logging import StructuredLoggingMiddleware
+	from fastmcp.server.middleware.rate_limiting import RateLimitingMiddleware
+
+	settings = load_settings()
+	server, _, _ = build_server(settings)
+	# FastMCP exposes the configured middleware via the ``middleware``
+	# attribute on the server instance.
+	mws = list(server.middleware)
+	assert isinstance(mws[0], ErrorHandlingMiddleware)
+	assert isinstance(mws[1], RateLimitingMiddleware)
+	assert isinstance(mws[2], StructuredLoggingMiddleware)
+
+
+def test_build_server_masks_error_details(env: dict[str, str]) -> None:
+	"""``mask_error_details=True`` keeps raw GitHub errors out of MCP responses.
+
+	The flag is stored on a private attribute in v3; we read it via that
+	name. This is a deliberate seam: if FastMCP renames or removes the
+	attribute we want this test to fail loudly so we can update the
+	wiring rather than ship a silently-broken safeguard.
+	"""
+	settings = load_settings()
+	server, _, _ = build_server(settings)
+	assert server._mask_error_details is True
+
+
 def test_server_settings_install_url_uses_slug() -> None:
 	settings = ServerSettings(
 		base_url="https://x",

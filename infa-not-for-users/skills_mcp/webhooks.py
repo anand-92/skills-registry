@@ -16,9 +16,16 @@ What we do on each:
 * ``installation_repositories.removed`` — if the linked repo was removed,
   attempt to re-pick from what's left; if nothing's left, drop the link.
 
-Signature verification is the only thing that gates the handler — GitHub
-signs the raw body with ``GITHUB_APP_WEBHOOK_SECRET`` (HMAC-SHA256). Without
-that we'd accept any POST.
+Two gates run before any handler:
+
+1. HMAC-SHA256 signature verification against ``GITHUB_APP_WEBHOOK_SECRET``
+   (constant-time compare).
+2. Replay protection via :class:`~skills_mcp.linking.DeliveryStore`: every
+   webhook carries an ``X-GitHub-Delivery`` UUID. If we've already
+   processed that ID within the redelivery window, we return 200 without
+   re-running the handler. This makes replays — whether legitimate (GitHub
+   manual resend) or hostile (attacker replaying a captured signed body) —
+   no-ops instead of state mutations.
 """
 
 from __future__ import annotations
@@ -34,7 +41,7 @@ from starlette.responses import JSONResponse, Response
 
 from .github_api import repo_has_skills
 from .github_app import GitHubAppClient, GitHubAppError
-from .linking import LinkedRepo, LinkStore
+from .linking import DeliveryStore, LinkedRepo, LinkStore
 
 log = logging.getLogger("skills_mcp.webhooks")
 
@@ -49,12 +56,14 @@ class WebhookHandler:
 		secret: str,
 		app_client: GitHubAppClient,
 		link_store: LinkStore,
+		delivery_store: DeliveryStore,
 	) -> None:
 		if not secret:
 			raise ValueError("GitHubAppWebhookHandler requires a non-empty secret")
 		self._secret = secret.encode("utf-8")
 		self._app = app_client
 		self._links = link_store
+		self._deliveries = delivery_store
 
 	async def __call__(self, request: Request) -> Response:
 		body = await request.body()
@@ -63,6 +72,14 @@ class WebhookHandler:
 			log.warning("Rejected webhook with bad signature")
 			return JSONResponse({"error": "bad signature"}, status_code=401)
 
+		# Replay-protection check runs after signature verification: an
+		# unsigned replay would already be rejected above, so we only
+		# spend a KV lookup on requests that proved they hold the secret.
+		delivery_id = request.headers.get("X-GitHub-Delivery", "")
+		if delivery_id and await self._deliveries.seen(delivery_id):
+			log.info("Deduped webhook delivery %s", delivery_id)
+			return JSONResponse({"deduped": delivery_id})
+
 		event = request.headers.get("X-GitHub-Event", "")
 		try:
 			payload = json.loads(body.decode("utf-8"))
@@ -70,20 +87,29 @@ class WebhookHandler:
 			return JSONResponse({"error": "invalid json"}, status_code=400)
 
 		action = payload.get("action", "")
-		log.info("Webhook %s.%s received", event, action)
+		log.info("Webhook %s.%s delivery=%s received", event, action, delivery_id)
 
 		handler = self._route(event, action)
 		if handler is None:
+			# Mark even ignored events as seen so a replay doesn't trip
+			# the routing branch a second time.
+			await self._deliveries.mark(delivery_id)
 			return JSONResponse({"ignored": f"{event}.{action}"})
 
 		try:
 			await handler(payload)
 		except GitHubAppError as exc:
 			log.error("GitHub API failure handling %s.%s: %s", event, action, exc)
+			# Don't mark as seen on transient errors; GitHub may retry and
+			# we want the next attempt to actually run.
 			return JSONResponse({"error": "github api"}, status_code=502)
 		except (ValueError, KeyError, TypeError) as exc:
 			log.exception("Malformed payload for %s.%s: %s", event, action, exc)
+			# Bad payloads won't get better on retry — mark as seen so
+			# GitHub stops re-sending the same broken event.
+			await self._deliveries.mark(delivery_id)
 			return JSONResponse({"error": "bad payload"}, status_code=400)
+		await self._deliveries.mark(delivery_id)
 		return JSONResponse({"ok": True})
 
 	def _route(self, event: str, action: str) -> Any:

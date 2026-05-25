@@ -50,7 +50,8 @@ from starlette.responses import Response
 from . import __version__
 from .github_api import SkillSummary, get_skill_md, list_skill_folders, slugify
 from .github_app import GitHubAppClient, GitHubAppCredentials
-from .linking import LinkedRepo, LinkStore
+from .linking import DeliveryStore, LinkedRepo, LinkStore
+from .middleware import build_middleware_stack
 from .setup_routes import make_routes
 from .webhooks import WebhookHandler
 
@@ -177,10 +178,16 @@ def build_server(settings: ServerSettings) -> tuple[FastMCP, LinkStore, GitHubAp
 
 	Returns the server plus the link store and App client so callers (like
 	tests) can poke at them without re-reading env vars.
+
+	Wires the production middleware stack (error handling, rate limiting,
+	structured logging) via :func:`skills_mcp.middleware.build_middleware_stack`
+	and turns on ``mask_error_details=True`` so raw exception text from
+	GitHub never reaches the MCP client.
 	"""
 	storage = build_storage(settings)
 	auth = build_auth_provider(settings, storage)
 	link_store = LinkStore(storage)
+	delivery_store = DeliveryStore(storage)
 	app_client = GitHubAppClient(
 		GitHubAppCredentials(
 			app_id=settings.github_app_id,
@@ -199,9 +206,11 @@ def build_server(settings: ServerSettings) -> tuple[FastMCP, LinkStore, GitHubAp
 		),
 		version=__version__,
 		auth=auth,
+		middleware=build_middleware_stack(),
+		mask_error_details=True,
 	)
 	_register_tools(server, link_store, app_client, install_url=settings.install_url)
-	_register_routes(server, settings, app_client, link_store)
+	_register_routes(server, settings, app_client, link_store, delivery_store)
 	return server, link_store, app_client
 
 
@@ -305,6 +314,7 @@ def _register_routes(
 	settings: ServerSettings,
 	app_client: GitHubAppClient,
 	link_store: LinkStore,
+	delivery_store: DeliveryStore,
 ) -> None:
 	routes = make_routes(install_url=settings.install_url, mcp_url=settings.mcp_url)
 	for path, handler in routes.items():
@@ -314,6 +324,7 @@ def _register_routes(
 		secret=settings.github_app_webhook_secret,
 		app_client=app_client,
 		link_store=link_store,
+		delivery_store=delivery_store,
 	)
 
 	# Starlette's router dispatches plain ``async def`` endpoints with

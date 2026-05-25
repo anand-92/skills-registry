@@ -158,6 +158,73 @@ async def test_repo_has_skills_false_when_listing_404(monkeypatch: pytest.Monkey
 	assert await repo_has_skills("token", "empty/repo") is False
 
 
+async def test_list_skill_folders_caps_concurrent_fanout(
+	monkeypatch: pytest.MonkeyPatch,
+) -> None:
+	"""A registry with N folders fires ≤ _FANOUT_CONCURRENCY in flight at once.
+
+	Without the semaphore, ``asyncio.gather`` would launch all N folder
+	probes simultaneously. We assert the peak in-flight count stays at or
+	below the documented cap by gating each mock response on a counter +
+	a small ``asyncio.sleep`` so any unbounded fan-out becomes visible
+	through the counter.
+	"""
+	import asyncio
+
+	# Pick a folder count far larger than the cap so unbounded gather
+	# would clearly trip the assertion.
+	folder_count = 50
+	folder_names = [f"skill_{i:03d}" for i in range(folder_count)]
+
+	in_flight = 0
+	peak = 0
+	lock = asyncio.Lock()
+
+	async def gated_response(slug: str) -> httpx.Response:
+		nonlocal in_flight, peak
+		async with lock:
+			in_flight += 1
+			peak = max(peak, in_flight)
+		# Yield once so other coroutines get a chance to start and we can
+		# observe the true peak concurrency.
+		await asyncio.sleep(0)
+		async with lock:
+			in_flight -= 1
+		return httpx.Response(
+			200,
+			json={
+				"encoding": "base64",
+				"content": base64.b64encode(f"---\nname: {slug}\n---\nbody".encode()).decode(
+					"ascii"
+				),
+			},
+		)
+
+	# httpx.MockTransport only supports a sync handler returning a
+	# coroutine; build it manually so each request awaits the gated
+	# response.
+	async def async_handler(request: httpx.Request) -> httpx.Response:
+		url = str(request.url).split("?", 1)[0]
+		if url == "https://api.github.com/repos/big/registry/contents/":
+			return httpx.Response(200, json=[{"name": n, "type": "dir"} for n in folder_names])
+		slug = url.rsplit("/", 2)[-2]
+		return await gated_response(slug)
+
+	transport = httpx.MockTransport(async_handler)
+	real = httpx.AsyncClient
+
+	def fake(*args: Any, **kwargs: Any) -> httpx.AsyncClient:
+		kwargs["transport"] = transport
+		return real(*args, **kwargs)
+
+	monkeypatch.setattr(httpx, "AsyncClient", fake)
+
+	summaries = await list_skill_folders("token", "big/registry")
+	assert len(summaries) == folder_count
+	# 8 is the documented cap (see _FANOUT_CONCURRENCY in github_api).
+	assert peak <= 8, f"fan-out cap exceeded: peak={peak}"
+
+
 # ------------------------------------------------------------ helpers
 
 
