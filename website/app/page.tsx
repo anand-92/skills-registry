@@ -1,6 +1,6 @@
 'use client';
 
-/* eslint-disable react/no-unescaped-entities, react/jsx-no-comment-textnodes, @next/next/no-img-element */
+/* eslint-disable react/no-unescaped-entities, @next/next/no-img-element */
 import React, { useState, useEffect } from "react";
 
 export default function Home() {
@@ -183,42 +183,42 @@ export default function Home() {
         <div className="features-grid">
           <div className="feature-cell card">
             <span className="feature-num">01</span>
-            <div className="feature-mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 2v20M5 9l7-7 7 7M5 15l7 7 7-7"/></svg></div>
+            <div className="feature-mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6"><path d="M12 2v20M5 9l7-7 7 7M5 15l7 7 7-7"/></svg></div>
             <h4 className="h4">One registry, every device</h4>
             <p>Install the CLI on any machine and point it at the same GitHub repo. Your skills follow you — laptop, desktop, remote server, or fresh VM. No manual syncing, no drift between devices.</p>
           </div>
 
           <div className="feature-cell card">
             <span className="feature-num">02</span>
-            <div className="feature-mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg></div>
+            <div className="feature-mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg></div>
             <h4 className="h4">Fetched on demand</h4>
             <p>Tiny pointer file in each agent's dot-folder. The actual skill is downloaded the moment <span className="inline-code">get_skill(slug)</span> is called — and not before. No startup-token tax, no bloat.</p>
           </div>
 
           <div className="feature-cell card">
             <span className="feature-num">03</span>
-            <div className="feature-mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 6h16M4 12h16M4 18h16"/><circle cx="6" cy="6" r="1.6" fill="currentColor"/></svg></div>
+            <div className="feature-mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6"><path d="M4 6h16M4 12h16M4 18h16"/><circle cx="6" cy="6" r="1.6" fill="currentColor"/></svg></div>
             <h4 className="h4">gh-only GitHub I/O</h4>
             <p>No <span className="inline-code">git</span> shell-out. No SSH. No embedded HTTP. Every call routes through the user's authenticated GitHub CLI via the Git Data API.</p>
           </div>
 
           <div className="feature-cell card">
             <span className="feature-num">04</span>
-            <div className="feature-mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M21 12a9 9 0 1 1-9-9"/><path d="M21 3v6h-6"/></svg></div>
+            <div className="feature-mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6"><path d="M21 12a9 9 0 1 1-9-9"/><path d="M21 3v6h-6"/></svg></div>
             <h4 className="h4">Tree-SHA cache</h4>
             <p>Skills cached in <span className="inline-code">~/.cache/skills-mcp/skills/</span>. Cache key is GitHub's tree SHA — force-pushes and subtree changes invalidate correctly.</p>
           </div>
 
           <div className="feature-cell card">
             <span className="feature-num">05</span>
-            <div className="feature-mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 22s8-4 8-12V4l-8-2-8 2v6c0 8 8 12 8 12Z"/><path d="m9 12 2 2 4-4"/></svg></div>
+            <div className="feature-mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6"><path d="M12 22s8-4 8-12V4l-8-2-8 2v6c0 8 8 12 8 12Z"/><path d="m9 12 2 2 4-4"/></svg></div>
             <h4 className="h4">Path-traversal hardened</h4>
             <p>Every write — <span className="inline-code">publish</span>, <span className="inline-code">add</span>, <span className="inline-code">sync</span> — rejects <span className="inline-code">..</span> segments and backslash traversals. 2 MiB cap per file. Same validation in Python and Go.</p>
           </div>
 
           <div className="feature-cell card">
             <span className="feature-num">06</span>
-            <div className="feature-mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M6 3v18M18 3v18M3 6h18M3 18h18"/></svg></div>
+            <div className="feature-mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6"><path d="M6 3v18M18 3v18M3 6h18M3 18h18"/></svg></div>
             <h4 className="h4">Git, but for skills</h4>
             <p>The registry is a real GitHub repo. Branch it, PR it, fork a teammate's, restore old versions. Apache-2.0 — yours forever.</p>
           </div>
@@ -357,27 +357,25 @@ export default function Home() {
             </div>
 
             <div className="code-panel" id="cfg-claude" hidden={configTab !== "cfg-claude"}>
-              <pre className="code-block">
-<span className="c">// Claude Code / Claude Desktop / Cursor / VS Code — mcp.json</span>
-<span className="p">&#123;</span>
-  <span className="k">"mcpServers"</span><span className="p">:</span> <span className="p">&#123;</span>
-    <span className="k">"skills-registry"</span><span className="p">:</span> <span className="p">&#123;</span>
-      <span className="k">"type"</span><span className="p">:</span> <span className="s">"http"</span><span className="p">,</span>
-      <span className="k">"url"</span><span className="p">:</span> <span className="s">"https://mcp.skills-registry.dev/mcp"</span>
-    <span className="p">&#125;</span>
-  <span className="p">&#125;</span>
-<span className="p">&#125;</span></pre>
+              <pre className="code-block"><code>{`// Claude Code / Claude Desktop / Cursor / VS Code - mcp.json
+{
+  "mcpServers": {
+    "skills-registry": {
+      "type": "http",
+      "url": "https://mcp.skills-registry.dev/mcp"
+    }
+  }
+}`}</code></pre>
             </div>
 
             <div className="code-panel" id="cfg-call" hidden={configTab !== "cfg-call"}>
-              <pre className="code-block">
-<span className="c"># What the agent ends up doing under the hood</span>
-<span className="k">user</span><span className="p">:</span> <span className="s">"use my code-review skill on this PR"</span>
+              <pre className="code-block"><code>{`# What the agent ends up doing under the hood
+user: "use my code-review skill on this PR"
 
-<span className="k">agent</span><span className="p">:</span> get_skill<span className="p">(</span><span className="s">"code-review"</span><span className="p">)</span>
-<span className="p">→</span> hosted MCP returns raw SKILL.md
-<span className="p">→</span> agent reads the markdown
-<span className="p">→</span> follows the skill's instructions</pre>
+agent: get_skill("code-review")
+-> hosted MCP returns raw SKILL.md
+-> agent reads the markdown
+-> follows the skill's instructions`}</code></pre>
             </div>
 
             <p className="meta-text" style={{marginTop: "14px"}}><span className="num">skills-registry</span> prints this snippet for you on first run.</p>
@@ -435,25 +433,23 @@ export default function Home() {
             </div>
 
             <div className="code-panel" id="inst-curl" hidden={installTab !== "inst-curl"}>
-              <pre className="code-block">
-<span className="c"># Drops the Go binary into ~/.local/bin/skills-registry</span>
-<span className="k">$</span> curl -fsSL https://raw.githubusercontent.com/anand-92/skills-registry/main/install.sh | sh
+              <pre className="code-block"><code>{`# Drops the Go binary into ~/.local/bin/skills-registry
+$ curl -fsSL https://raw.githubusercontent.com/anand-92/skills-registry/main/install.sh | sh
 
-<span className="c"># Then run the wizard:</span>
-<span className="k">$</span> skills-registry</pre>
+# Then run the wizard:
+$ skills-registry`}</code></pre>
             </div>
 
             <div className="code-panel" id="inst-mcp" hidden={installTab !== "inst-mcp"}>
-              <pre className="code-block">
-<span className="c">// Claude Code / Claude Desktop / Cursor / VS Code — mcp.json</span>
-<span className="p">&#123;</span>
-  <span className="k">"mcpServers"</span><span className="p">:</span> <span className="p">&#123;</span>
-    <span className="k">"skills-registry"</span><span className="p">:</span> <span className="p">&#123;</span>
-      <span className="k">"type"</span><span className="p">:</span> <span className="s">"http"</span><span className="p">,</span>
-      <span className="k">"url"</span><span className="p">:</span> <span className="s">"https://mcp.skills-registry.dev/mcp"</span>
-    <span className="p">&#125;</span>
-  <span className="p">&#125;</span>
-<span className="p">&#125;</span></pre>
+              <pre className="code-block"><code>{`// Claude Code / Claude Desktop / Cursor / VS Code - mcp.json
+{
+  "mcpServers": {
+    "skills-registry": {
+      "type": "http",
+      "url": "https://mcp.skills-registry.dev/mcp"
+    }
+  }
+}`}</code></pre>
             </div>
 
             <p className="meta-text" style={{marginTop: "14px"}}>
