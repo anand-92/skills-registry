@@ -61,6 +61,67 @@ class SkillSummary:
 	description: str
 
 
+def _score_skill(query: str, summary: SkillSummary) -> int:
+	"""Lightweight fuzzy scorer for skill summaries.
+
+	Slightly prioritizes field relevance and token matching.
+	Weights: name = 2x, description = 1x, slug = 1x.
+	"""
+	q = query.strip().lower()
+	if not q:
+		return 0
+
+	slug = summary.slug.lower()
+	name = summary.name.lower()
+	desc = summary.description.lower()
+
+	# Split query into tokens (non-empty lowercase words)
+	q_tokens = [t for t in re.split(r"[^a-z0-9]+", q) if t]
+
+	score = 0
+	for field, w in [(slug, 1), (name, 2), (desc, 1)]:
+		if field == q:
+			score += 1000 * w
+		elif field.startswith(q):
+			score += 500 * w
+		elif q in field:
+			score += 250 * w
+
+		f_tokens = set(t for t in re.split(r"[^a-z0-9]+", field) if t)
+		overlap_count = sum(1 for t in q_tokens if t in f_tokens)
+		score += 100 * w * overlap_count
+
+	return score
+
+
+async def search_skills(
+	token: str,
+	repo: str,
+	query: str = "",
+	*,
+	timeout_s: float = 10.0,
+) -> list[SkillSummary]:
+	"""Search skills via fuzzy matching.
+
+	If query is empty or whitespace, returns all skills sorted by slug (alphabetical).
+	Otherwise, scores summaries, sorts by score descending (with slug alphabetical
+	sub-sort for determinism), and returns the top 10 matches.
+	"""
+	summaries = await list_skill_folders(token, repo, timeout_s=timeout_s)
+	q_stripped = query.strip()
+	if not q_stripped:
+		return summaries
+
+	scored_summaries = []
+	for s in summaries:
+		score = _score_skill(q_stripped, s)
+		if score > 0:
+			scored_summaries.append((score, s))
+
+	scored_summaries.sort(key=lambda item: (-item[0], item[1].slug))
+	return [s for _, s in scored_summaries[:10]]
+
+
 async def list_skill_folders(
 	token: str,
 	repo: str,

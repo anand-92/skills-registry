@@ -49,7 +49,7 @@ from starlette.responses import Response
 
 from . import __version__
 from .analytics import posthog_client
-from .github_api import SkillSummary, get_skill_md, list_skill_folders, slugify
+from .github_api import SkillSummary, get_skill_md, search_skills, slugify
 from .github_app import GitHubAppClient, GitHubAppCredentials
 from .linking import DeliveryStore, LinkedRepo, LinkStore
 from .middleware import build_middleware_stack
@@ -201,7 +201,7 @@ def build_server(settings: ServerSettings) -> tuple[FastMCP, LinkStore, GitHubAp
 		instructions=(
 			"Hosted GitHub-backed skill registry. Authenticate via GitHub OAuth, "
 			"install the Skills Registry GitHub App on your skills repo, then "
-			"call `list_skills` to discover skills and `get_skill(slug=...)` to "
+			"call `search_skills` to discover skills and `get_skill(slug=...)` to "
 			"read one. The server keeps no local cache; the registry repo is "
 			"the source of truth."
 		),
@@ -226,27 +226,31 @@ def _register_tools(
 	install_url: str,
 ) -> None:
 	@server.tool(
-		name="list_skills",
+		name="search_skills",
 		description=(
-			"List every skill in your linked GitHub skill registry. Returns a "
-			"markdown table with slug, name, and description."
+			"Search skills in your linked GitHub skill registry. Returns a "
+			"markdown table of matches with slug, name, and description. "
+			"If query is non-empty, fuzzy-ranks and limits to top 10; "
+			"if query is empty, lists all skills alphabetically."
 		),
 		tags={"skills", "registry"},
 		annotations={"readOnlyHint": True, "openWorldHint": True},
 	)
-	async def list_skills() -> str:
+	async def search_skills_tool(query: str = "") -> str:
 		link = await _resolve_link(link_store, install_url=install_url)
 		if isinstance(link, str):
-			_track_not_linked(_current_user_id(), "list_skills")
+			_track_not_linked(_current_user_id(), "search_skills")
 			return link
 		token = await app_client.mint_installation_token(link.installation_id)
-		summaries = await list_skill_folders(token, link.repo)
+		summaries = await search_skills(token, link.repo, query=query)
 		posthog_client.capture(
 			distinct_id=_current_user_id(),
-			event="list_skills_called",
-			properties={"skill_count": len(summaries)},
+			event="search_skills_called",
+			properties={"query": query, "skill_count": len(summaries)},
 		)
 		if not summaries:
+			if query:
+				return f"No skills matching `{query}` found in `{link.repo}`."
 			return (
 				f"No skills found in `{link.repo}`. Add a skill with `SKILL.md` "
 				"using the `skills-registry` CLI and they'll appear here."

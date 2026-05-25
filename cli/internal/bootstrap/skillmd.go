@@ -25,7 +25,7 @@ Skills live at https://github.com/%s and can be reached two ways:
 
 1. **MCP (preferred when available).** If this agent's client is wired to
    the hosted MCP server at ` + "`https://mcp.skills-registry.dev/mcp`" + `, you
-   already have the ` + "`list_skills`" + ` and ` + "`get_skill`" + ` tools.
+   already have the ` + "`search_skills`" + ` and ` + "`get_skill`" + ` tools.
    Use them — they're faster and don't require a CLI binary.
 
 2. **CLI (fallback / write-side).** When MCP isn't available, or for write
@@ -49,14 +49,14 @@ to upgrade.
 
 ## 1. Discover what's available
 
-MCP: call ` + "`list_skills`" + `.
+MCP: call ` + "`search_skills(query=\"<query>\")`" + `.
 
 CLI:
 ` + "```" + `
-skills-registry list
+skills-registry search [QUERY]
 ` + "```" + `
 
-Match the user's request against descriptions, not just slugs.
+Or use ` + "`skills-registry list`" + ` for an interactive list. Match the user's request against descriptions, not just slugs.
 
 ## 2. Fetch the skill
 
@@ -127,6 +127,7 @@ letting a human pick from a list.
 | Command | Payload shape |
 |---|---|
 | ` + "`skills-registry list --json`" + ` | ` + "`[{\"slug\": \"...\", \"name\": \"...\", \"description\": \"...\"}, …]`" + ` |
+| ` + "`skills-registry search [QUERY] --json`" + ` | ` + "`[{\"slug\": \"...\", \"name\": \"...\", \"description\": \"...\"}, …]`" + ` |
 | ` + "`skills-registry get <slug> --json`" + ` | ` + "`{\"slug\": \"...\", \"path\": \"...\"}`" + ` (path is the on-disk dest) |
 | ` + "`skills-registry publish <path> --json`" + ` | ` + "`{\"slug\": \"...\", \"sha\": \"...\", \"url\": \"...\"}`" + ` |
 | ` + "`skills-registry sync --json`" + ` | ` + "`{\"pushed\": [...slugs], \"skipped\": [...slugs]}`" + ` |
@@ -143,7 +144,7 @@ prompt. Combine with ` + "`jq`" + ` to chain calls — e.g.
 - ` + "`gh auth status`" + ` — confirm GitHub credentials are present
 - If ` + "`skills-registry list`" + ` errors, check the config at
   ` + "`~/.config/skills-mcp/registry.toml`" + ` points at the right ` + "`owner/repo`" + `
-- If MCP tools (` + "`list_skills`" + ` / ` + "`get_skill`" + `) say "no repo
+- If MCP tools (` + "`search_skills`" + ` / ` + "`get_skill`" + `) say "no repo
   linked yet", install the Skills Registry GitHub App on your registry repo
   via the link the server prints, then retry — the webhook auto-links
   within a few seconds.

@@ -17,8 +17,8 @@ A living guide for AI agents and new contributors. Captures the architecture, pa
 
 | Piece | Language | Distribution | Job |
 |---|---|---|---|
-| `skills-registry` (Go) | Go 1.24+ | GitHub Releases tarballs, installed by `install.sh` (`curl … \| sh`) | Charmbracelet TUI + headless commands. Bare invocation routes to wizard / hub / help. Subcommands: `bootstrap`, `list`, `get`, `sync`, `add`, `publish`, `remove`. All subcommands honor a persistent `--json` flag. |
-| `skills-registry-mcp` (Python, hosted) | Python 3.10+ (FastMCP) | Docker image on Railway, served at `https://mcp.skills-registry.dev/mcp` | Streamable HTTP MCP server with **2 read-only tools** (`list_skills`, `get_skill`). All writes (`publish` / `sync` / `remove`) go through the Go CLI — the hosted server never mutates the user's repo. OAuth + GitHub App on first connect. Users never install this. |
+| `skills-registry` (Go) | Go 1.24+ | GitHub Releases tarballs, installed by `install.sh` (`curl … \| sh`) | Charmbracelet TUI + headless commands. Bare invocation routes to wizard / hub / help. Subcommands: `bootstrap`, `list`, `search`, `get`, `sync`, `add`, `publish`, `remove`. All subcommands honor a persistent `--json` flag. |
+| `skills-registry-mcp` (Python, hosted) | Python 3.10+ (FastMCP) | Docker image on Railway, served at `https://mcp.skills-registry.dev/mcp` | Streamable HTTP MCP server with **2 read-only tools** (`search_skills`, `get_skill`). All writes (`publish` / `sync` / `remove`) go through the Go CLI — the hosted server never mutates the user's repo. OAuth + GitHub App on first connect. Users never install this. |
 
 - **Build (Python, maintainer-only):** `hatchling` (PEP 517) with a static `version = "0.0.0+server"` in `pyproject.toml`. The server is never published to PyPI, never tagged, and Railway redeploys on every push to `main`, so there's no semver to derive. The wheel exists only to provide the `skills-registry-mcp` entry point inside the Docker image.
 - **Package manager (Python):** `uv`
@@ -45,7 +45,7 @@ install.sh               # POSIX `curl | sh` installer — the user-facing entry
 infa-not-for-users/      # Maintainer-only. Hosted MCP server source + Docker/Railway config.
   skills_mcp/            # Python package (no `src/` layout — packages = ["skills_mcp"] in pyproject.toml)
     __init__.py          # __version__ resolved from installed package metadata
-    remote_server.py     # `skills-registry-mcp` — FastMCP build_server() + main(); registers list_skills + get_skill, wires middleware stack + mask_error_details
+    remote_server.py     # `skills-registry-mcp` — FastMCP build_server() + main(); registers search_skills + get_skill, wires middleware stack + mask_error_details
     middleware.py        # Production middleware stack: ErrorHandling → RateLimiting (per-user `sub` token bucket) → StructuredLogging
     github_api.py        # Token-based GitHub REST helpers: list_skill_folders, get_skill_md, repo_has_skills. Fan-out capped at _FANOUT_CONCURRENCY (8) via asyncio.Semaphore
     github_app.py        # GitHubAppClient: JWT minting, installation lookup, installation-token issuance with in-process TTL cache + asyncio.Lock, retry
@@ -66,7 +66,7 @@ cli/                     # Separate Go module (own go.mod) — the user-facing b
     wizard.go            # First-run onboarding wizard (Bubble Tea alt-screen, 8 steps)
     hub.go               # Returning-user dashboard hub (alt-screen card grid)
     bootstrap.go         # Legacy headless `bootstrap` subcommand (still useful for scripting)
-    list.go / get.go / sync.go / add.go / publish.go / remove.go   # Per-subcommand handlers
+    list.go / search.go / get.go / sync.go / add.go / publish.go / remove.go   # Per-subcommand handlers
   internal/
     agents/              # 56-entry KNOWN_DOT_DIRS catalogue with display names + universal flag
     bootstrap/           # SkillMd renderer + InstallSkillMd + hosted-MCP JSON snippet (HostedMCPURL constant + MCPJSONSnippet())
@@ -126,7 +126,7 @@ website/                 # Next.js landing page (skills-registry.dev). Static; d
             ├─ OAuth handshake on first connect (browser pop-up → GitHub)
             ├─ Server resolves {github_user → owner/repo} from its repo-link table
             │     (table populated by Skills Registry GitHub App `installation` webhook)
-            └─ list_skills / get_skill → GitHub REST contents API
+            └─ search_skills / get_skill → GitHub REST contents API
                   via installation-scoped GitHub App token (read-only)
 ```
 
@@ -227,7 +227,7 @@ Two additional safeguards run outside the middleware chain:
 
 | Symbol | File | Role |
 |---|---|---|
-| `build_server()` | `infa-not-for-users/skills_mcp/remote_server.py` | Constructs the FastMCP server, validates settings at boot, registers the two read-only tools (`list_skills`, `get_skill`), and wires the production middleware stack + `mask_error_details=True`. Returns `(FastMCP, LinkStore, GitHubAppClient)`. |
+| `build_server()` | `infa-not-for-users/skills_mcp/remote_server.py` | Constructs the FastMCP server, validates settings at boot, registers the two read-only tools (`search_skills`, `get_skill`), and wires the production middleware stack + `mask_error_details=True`. Returns `(FastMCP, LinkStore, GitHubAppClient)`. |
 | `build_middleware_stack` / `client_id_from_token` | `infa-not-for-users/skills_mcp/middleware.py` | Returns the ordered list `[ErrorHandlingMiddleware, RateLimitingMiddleware, StructuredLoggingMiddleware]`. The rate limiter keys on the OAuth `sub` claim (5 RPS sustained, 15-request burst, per user — hardcoded). |
 | `list_skill_folders` / `get_skill_md` / `repo_has_skills` | `infa-not-for-users/skills_mcp/github_api.py` | Token-based GitHub REST helpers used by the hosted server's read tools. No `gh` binary, no `git`. SKILL.md fan-out bounded by `_FANOUT_CONCURRENCY = 8` via `asyncio.Semaphore`. |
 | `GitHubAppClient` | `infa-not-for-users/skills_mcp/github_app.py` | Mints the JWT, looks up the installation for a given user, and exchanges JWT → installation access token. Caches installation tokens in-process per `installation_id` (refresh 60s before `expires_at`) under an `asyncio.Lock` so concurrent first-time mints fan into one HTTP call. Owns the retry policy. |

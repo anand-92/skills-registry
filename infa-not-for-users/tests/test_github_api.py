@@ -10,9 +10,12 @@ import httpx
 import pytest
 
 from skills_mcp.github_api import (
+	SkillSummary,
+	_score_skill,
 	get_skill_md,
 	list_skill_folders,
 	repo_has_skills,
+	search_skills,
 	slugify,
 )
 from skills_mcp.github_app import GitHubAppError
@@ -271,3 +274,63 @@ def _file_blob(text: str) -> dict[str, Any]:
 def _skill_md(slug: str, name: str, description: str) -> dict[str, Any]:
 	body = f"---\nname: {name}\ndescription: {description}\n---\nbody for {slug}\n"
 	return _file_blob(body)
+
+
+def test_score_skill() -> None:
+	s = SkillSummary(
+		slug="git_tools",
+		name="Git Helper Tools",
+		description="Provides advanced git commit and status helpers.",
+	)
+	assert _score_skill("", s) == 0
+	# Exact match name: 1000 * 2 (exact name) + 100 * 2 * 3 (tokens: "git", "helper", "tools" are all in the name) + description token overlaps etc.
+	# Let's check >= 2000
+	assert _score_skill("Git Helper Tools", s) >= 2000
+	# Exact match slug
+	assert _score_skill("git_tools", s) >= 1000
+	# Exact match description
+	assert _score_skill("Provides advanced git commit and status helpers.", s) >= 1000
+	# Prefix match (exact is tried first, then prefix)
+	assert _score_skill("git_t", s) >= 500
+	# No match keys
+	assert _score_skill("completely_unrelated", s) == 0
+
+
+async def test_search_skills(monkeypatch: pytest.MonkeyPatch) -> None:
+	handler = _handler(
+		{
+			"https://api.github.com/repos/acme/skills/contents/": _dir_listing(
+				["git_tools", "python_lint", "js_format"]
+			),
+			"https://api.github.com/repos/acme/skills/contents/git_tools/SKILL.md": _skill_md(
+				"git_tools", "Git Tools", "Run git status and commits"
+			),
+			"https://api.github.com/repos/acme/skills/contents/python_lint/SKILL.md": _skill_md(
+				"python_lint", "Python Linting", "Run ruff on your codebase"
+			),
+			"https://api.github.com/repos/acme/skills/contents/js_format/SKILL.md": _skill_md(
+				"js_format", "JS Formatter", "Run prettier beautifully"
+			),
+		}
+	)
+	_install_mock_transport(monkeypatch, handler)
+
+	# Empty query returns all sorted alphabetically (git_tools, js_format, python_lint)
+	all_skills = await search_skills("token", "acme/skills", "")
+	assert len(all_skills) == 3
+	assert all_skills[0].slug == "git_tools"
+	assert all_skills[1].slug == "js_format"
+	assert all_skills[2].slug == "python_lint"
+
+	# Fuzzy search specific
+	git_search = await search_skills("token", "acme/skills", "Git")
+	assert len(git_search) == 1
+	assert git_search[0].slug == "git_tools"
+
+	# Fuzzy search matching multiple
+	run_search = await search_skills("token", "acme/skills", "Run")
+	assert len(run_search) == 3
+	# Git Tools might score higher on "Run git status and commits" vs "Run ruff on your codebase"? Wait:
+	# "git status and commits" -> git_tools (slug has git_tools, name has Git Tools).
+	# Let's just assert they are returned.
+	assert {s.slug for s in run_search} == {"git_tools", "js_format", "python_lint"}

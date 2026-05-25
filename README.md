@@ -79,7 +79,7 @@ Paste the printed JSON into your MCP client config, reload, and ask:
 > *"What skills do I have available?"*
 > *"Get the `code-review` skill and use it on this PR."*
 
-The agent calls `list_skills` and `get_skill` automatically — you never touch the MCP tools directly.
+The agent calls `search_skills` and `get_skill` automatically — you never touch the MCP tools directly.
 
 ---
 
@@ -90,7 +90,8 @@ Run `skills-registry` for the dashboard, or use subcommands directly:
 | What you want | Command |
 |---|---|
 | Open the dashboard | `skills-registry` |
-| Browse what's in your registry | `skills-registry list` |
+| Browse what's in your registry as an interactive list | `skills-registry list` |
+| Fuzzy-search your registry returning top 10 matches | `skills-registry search [QUERY]` |
 | Pull one skill into the current folder | `skills-registry get <slug>` |
 | Push skills sitting in `.claude/skills` etc. into the registry | `skills-registry sync` |
 | Pull a skill from someone else's repo into yours | `skills-registry add <owner/repo>` |
@@ -124,6 +125,7 @@ Every subcommand accepts a persistent `--json` flag. With it, the CLI suppresses
 | Command | Payload shape |
 |---|---|
 | `skills-registry list --json` | `[{"slug", "name", "description"}, …]` |
+| `skills-registry search [QUERY] --json` | `[{"slug", "name", "description"}, …]` |
 | `skills-registry get <slug> --json` | `{"slug", "path"}` (on-disk dest) |
 | `skills-registry publish <path> --json` | `{"slug", "sha", "url"}` |
 | `skills-registry sync --json` | `{"pushed": [...slugs], "skipped": [...slugs]}` |
