@@ -334,8 +334,14 @@ func downloadUpdateAsset(ctx context.Context, client *http.Client, releaseBase, 
 	if err != nil {
 		return fmt.Errorf("create %s: %w", dest, err)
 	}
+	// `defer out.Close()` is the safety net: if any future return path is
+	// added before the explicit Close below, the descriptor still gets
+	// released. A double-close on an already-closed *os.File returns an
+	// error which we drop, since the explicit close above has already
+	// surfaced any flush failure to the caller.
+	defer out.Close()
+
 	if _, err := io.Copy(out, resp.Body); err != nil {
-		out.Close()
 		return fmt.Errorf("write %s: %w", dest, err)
 	}
 	if err := out.Close(); err != nil {

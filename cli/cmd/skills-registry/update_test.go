@@ -320,6 +320,13 @@ func TestPerformUpdateEndToEndViaHTTP(t *testing.T) {
 	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
 		t.Skipf("update only supports darwin/linux, running on %s", runtime.GOOS)
 	}
+	// updateAssetName only knows amd64/arm64; on a non-release GOARCH
+	// (e.g. 386, ppc64le, riscv64) it returns an error and the test
+	// would fail through no fault of the updater. Skip those builds so
+	// `go test ./...` stays green on any host architecture.
+	if runtime.GOARCH != "amd64" && runtime.GOARCH != "arm64" {
+		t.Skipf("update only supports amd64/arm64, running on %s", runtime.GOARCH)
+	}
 	asset, err := updateAssetName(runtime.GOOS, runtime.GOARCH)
 	if err != nil {
 		t.Fatalf("updateAssetName: %v", err)
