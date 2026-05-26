@@ -762,21 +762,13 @@ func (m ListModel) renderPreviewPanel() string {
 		if row.Slug != "" && !slugMatchesName(row.Slug, row.Name) {
 			slugLine = PreviewSlug.Render(truncate("slug · "+row.Slug, innerWidth))
 		}
-		desc := row.Desc
-		if desc == "" {
-			desc = lipgloss.NewStyle().Foreground(ColMuted).Italic(true).Render("(no description)")
-		}
-		// PreviewBody.Width(...) soft-wraps long descriptions to fit
-		// the panel; combined with the explicit innerWidth budget
-		// above, the whole preview stays inside the rounded border
-		// regardless of the source string's length.
-		descBlock := PreviewBody.Width(innerWidth).Render(desc)
-
-		// If the wrapped description would push the gradient / meta /
-		// hint off the bottom of the panel, ellipsize the description
-		// itself instead. We'd rather show "first N lines of desc + …"
-		// than have the trailing chrome silently disappear (the old
-		// behavior with Height(m.preview.Height) — see issue #28).
+		// Wrap and clamp the description so it fits inside the panel
+		// without pushing the gradient / meta / hint off the bottom
+		// (the old `Height(m.preview.Height)` clamp silently chopped
+		// the bottom — see issue #28). `clampPreviewDesc` owns both
+		// the wrap and the styling so we hand it raw text and get a
+		// rendered block back.
+		var descBlock string
 		if row.Desc == "" {
 			descBlock = lipgloss.NewStyle().Foreground(ColMuted).Italic(true).Width(innerWidth).Render("(no description)")
 		} else {
@@ -1071,21 +1063,26 @@ func truncate(s string, n int) string {
 }
 
 // previewFixedRowsBase is the number of rows the preview pane always
-// renders besides the description block: title + 5 blanks + gradient +
-// meta + hint = 9. The optional "slug · …" row, when present, adds one
+// renders besides the description block: title + 4 blanks + gradient +
+// meta + hint = 8. The optional "slug · …" row, when present, adds one
 // more. Keep in sync with the blocks list in renderPreviewPanel.
-const previewFixedRowsBase = 9
+const previewFixedRowsBase = 8
 
-// clampPreviewDesc trims a pre-wrapped description block so the
+// clampPreviewDesc soft-wraps a raw plain-text description so the
 // description + fixed chrome (title/slug/gradient/meta/hint) fit inside
-// the supplied panel height. When the description still overflows, the
-// final visible line absorbs the leftover content and gets a trailing
-// "…" via wrapToLines, so callers see a clearly truncated description
-// instead of losing the gradient / meta / hint row to the height clamp
-// downstream.
-func clampPreviewDesc(descBlock string, width, panelHeight int, hasSlug bool) string {
+// the supplied panel height, then applies the PreviewBody style exactly
+// once. When the description would overflow the budget, wrapToLines
+// stamps a trailing "…" on the final visible line so callers see a
+// clearly truncated description instead of losing the gradient / meta /
+// hint row to the height clamp downstream.
+//
+// Taking the raw `desc` (instead of a pre-styled block) keeps the
+// wrap/clamp math operating on plain text — no ANSI escape sequences or
+// width-padding spaces to confuse `wrapToLines` / `truncate`, and no
+// risk of slicing through an escape sequence mid-byte.
+func clampPreviewDesc(desc string, width, panelHeight int, hasSlug bool) string {
 	if width <= 0 || panelHeight <= 0 {
-		return descBlock
+		return PreviewBody.Width(width).Render(desc)
 	}
 	fixed := previewFixedRowsBase
 	if hasSlug {
@@ -1095,15 +1092,7 @@ func clampPreviewDesc(descBlock string, width, panelHeight int, hasSlug bool) st
 	if budget < 1 {
 		budget = 1
 	}
-	lines := strings.Split(descBlock, "\n")
-	if len(lines) <= budget {
-		return descBlock
-	}
-	// Strip any styling residue from the soft-wrapped form so the merged
-	// remainder reflows as plain text, then re-wrap to the budget. The
-	// last visible line gets the ellipsis treatment from wrapToLines.
-	plain := strings.Join(lines, " ")
-	return PreviewBody.Width(width).Render(wrapToLines(plain, width, budget))
+	return PreviewBody.Width(width).Render(wrapToLines(desc, width, budget))
 }
 
 // wrapToLines soft-wraps s to display width `width` and returns at most

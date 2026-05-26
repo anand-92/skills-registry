@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"errors"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -10,6 +11,18 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
+
+// ansiSeq matches the standard CSI escape sequences lipgloss emits when
+// rendering with a color-capable profile (foreground/background colors,
+// bold/italic toggles, and the `\x1b[0m` reset). Test assertions on the
+// rendered output need to ignore these so they don't trip on terminal
+// styling that wraps the visible glyphs.
+var ansiSeq = regexp.MustCompile(`\x1b\[[0-9;]*[a-zA-Z]`)
+
+// stripANSI removes ANSI CSI escape sequences from s. Used by delegate /
+// preview tests so suffix / content assertions are deterministic across
+// `go test` environments where lipgloss may or may not emit ANSI codes.
+func stripANSI(s string) string { return ansiSeq.ReplaceAllString(s, "") }
 
 // stubDownloader returns a Downloader that records every slug it sees and
 // returns the configured dest/err.
@@ -688,7 +701,9 @@ func TestSkillDelegateRendersTwoDescLines(t *testing.T) {
 	desc := strings.TrimSpace(strings.Repeat("alpha bravo charlie ", 7))
 	row := SkillRow{Slug: "wrap_me", Name: "Wrap Me", Desc: desc}
 	rendered := renderSingleDelegate(t, row, 80)
-	lines := strings.Split(rendered, "\n")
+	// Strip ANSI before measuring "visible content" so the per-row check
+	// counts real glyphs rather than styling residue.
+	lines := strings.Split(stripANSI(rendered), "\n")
 	if len(lines) != 3 {
 		t.Fatalf("expected 3 lines, got %d:\n%s", len(lines), rendered)
 	}
@@ -710,17 +725,21 @@ func TestSkillDelegateLongDescriptionEllipsizes(t *testing.T) {
 	desc := strings.Repeat("alpha bravo charlie delta echo foxtrot ", 8)
 	row := SkillRow{Slug: "ellipsize", Name: "Ellipsize", Desc: desc}
 	rendered := renderSingleDelegate(t, row, 80)
-	lines := strings.Split(rendered, "\n")
+	// Strip ANSI before splitting so the suffix / width assertions are
+	// deterministic regardless of the test environment's color profile.
+	plain := stripANSI(rendered)
+	lines := strings.Split(plain, "\n")
 	if len(lines) != 3 {
 		t.Fatalf("expected 3 lines, got %d:\n%s", len(lines), rendered)
 	}
-	// Width budget is enforced on every line.
-	for _, line := range lines {
+	// Width budget is enforced on every line (lipgloss.Width is
+	// ANSI-aware, so it can operate on the original rendered output).
+	for _, line := range strings.Split(rendered, "\n") {
 		if w := lipgloss.Width(line); w > 80 {
 			t.Errorf("delegate line exceeds width 80: %d cells: %q", w, line)
 		}
 	}
-	if !strings.HasSuffix(lines[2], "…") {
+	if !strings.HasSuffix(strings.TrimRight(lines[2], " "), "…") {
 		t.Errorf("expected ellipsis on the last description line: %q", lines[2])
 	}
 }
@@ -760,13 +779,15 @@ func TestPreviewPanelKeepsHintWithLongDescription(t *testing.T) {
 }
 
 // TestClampPreviewDescPassthrough exercises clampPreviewDesc's no-op
-// path: a description that already fits the budget must come back
-// unchanged. This lets the previous behavior keep working for the
-// 99% case of short SKILL.md summaries.
+// path: a raw description that already fits the budget must come back
+// styled with PreviewBody. clampPreviewDesc now owns the rendering, so
+// the expected output is the same `PreviewBody.Width(...).Render(in)`
+// the caller would have produced for the in-budget case.
 func TestClampPreviewDescPassthrough(t *testing.T) {
-	in := PreviewBody.Width(60).Render("a short description.")
+	in := "a short description."
 	got := clampPreviewDesc(in, 60, 30, false)
-	if got != in {
-		t.Errorf("clampPreviewDesc mutated an in-budget block:\nin:  %q\ngot: %q", in, got)
+	want := PreviewBody.Width(60).Render(in)
+	if got != want {
+		t.Errorf("clampPreviewDesc mutated an in-budget block:\nwant: %q\ngot:  %q", want, got)
 	}
 }
