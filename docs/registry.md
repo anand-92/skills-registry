@@ -117,6 +117,8 @@ flowchart LR
 
 Each per-action helper returns a `hubToast`. The next loop iteration seeds that toast into the freshly-built `tui.HubModel`, so the user sees "✓ added from owner/repo" / "✗ remove: slug not found" / etc. Per-action errors land as red toasts and the user can retry; only a launcher-level failure (e.g. `config.Load` failing mid-session) escapes the loop. The hub terminates on quit (`q` / `esc` / `ctrl+c`) or empty selection.
 
+**List-pane description rendering.** The Browse → `skills-registry list` TUI uses a custom `skillDelegate` (`cli/internal/tui/listmodel.go`) with `Height(): 3`: one title row plus two description rows soft-wrapped through `wrapToLines`. Descriptions that still don't fit the 2-line budget get a trailing `…` so users know to look at the preview pane on the right for the full text. The preview pane itself runs the description through `clampPreviewDesc` first, so if the wrapped description would overflow the panel height the description is ellipsized inside *its own* block and the gradient/meta/hint footer stays visible — fixing the issue #28 regression where the trailing `lipgloss.Height(...).Render(body)` clamp silently chopped the bottom of the panel.
+
 ### 2.4 MCP wire-up
 
 The wizard's step 7 (`WizardStepMCPConnect`) and the headless `bootstrap` subcommand both print the same JSON blob:

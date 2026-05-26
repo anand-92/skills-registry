@@ -772,6 +772,13 @@ func (m ListModel) renderPreviewPanel() string {
 		// regardless of the source string's length.
 		descBlock := PreviewBody.Width(innerWidth).Render(desc)
 
+		// If the wrapped description would push the gradient / meta /
+		// hint off the bottom of the panel, ellipsize the description
+		// itself instead. We'd rather show "first N lines of desc + …"
+		// than have the trailing chrome silently disappear (the old
+		// behavior with Height(m.preview.Height) — see issue #28).
+		descBlock = clampPreviewDesc(descBlock, innerWidth, m.preview.Height, slugLine != "")
+
 		gradient := miniGradientBar(m.preview.Width-2, m.sparkleIdx)
 		dest := ".agents/skills/" + row.Slug + "/"
 		var hint string
@@ -1059,6 +1066,76 @@ func truncate(s string, n int) string {
 	return string(runes[:cut]) + "…"
 }
 
+// previewFixedRowsBase is the number of rows the preview pane always
+// renders besides the description block: title + 5 blanks + gradient +
+// meta + hint = 9. The optional "slug · …" row, when present, adds one
+// more. Keep in sync with the blocks list in renderPreviewPanel.
+const previewFixedRowsBase = 9
+
+// clampPreviewDesc trims a pre-wrapped description block so the
+// description + fixed chrome (title/slug/gradient/meta/hint) fit inside
+// the supplied panel height. When the description still overflows, the
+// final visible line absorbs the leftover content and gets a trailing
+// "…" via wrapToLines, so callers see a clearly truncated description
+// instead of losing the gradient / meta / hint row to the height clamp
+// downstream.
+func clampPreviewDesc(descBlock string, width, panelHeight int, hasSlug bool) string {
+	if width <= 0 || panelHeight <= 0 {
+		return descBlock
+	}
+	fixed := previewFixedRowsBase
+	if hasSlug {
+		fixed++
+	}
+	budget := panelHeight - fixed
+	if budget < 1 {
+		budget = 1
+	}
+	lines := strings.Split(descBlock, "\n")
+	if len(lines) <= budget {
+		return descBlock
+	}
+	// Strip any styling residue from the soft-wrapped form so the merged
+	// remainder reflows as plain text, then re-wrap to the budget. The
+	// last visible line gets the ellipsis treatment from wrapToLines.
+	plain := strings.Join(lines, " ")
+	return PreviewBody.Width(width).Render(wrapToLines(plain, width, budget))
+}
+
+// wrapToLines soft-wraps s to display width `width` and returns at most
+// `maxLines` lines (joined by "\n"). When wrapping would yield more
+// lines than the budget, the last kept line absorbs the leftover content
+// and `truncate` adds the "…" suffix so overflow is visible. Embedded
+// "\n"s in s are flattened to spaces first, which matches the
+// single-paragraph convention used by SKILL.md descriptions.
+//
+// The unit of measurement is lipgloss-reported display cells, so wide
+// glyphs (CJK / emoji) cost two cells just like in `truncate`. This is
+// what lets the list delegate show a real second line of description
+// without overrunning the panel.
+func wrapToLines(s string, width, maxLines int) string {
+	if width <= 0 || maxLines <= 0 {
+		return ""
+	}
+	flat := strings.ReplaceAll(s, "\n", " ")
+	if lipgloss.Width(flat) <= width {
+		return flat
+	}
+	// lipgloss soft-wraps at word boundaries when content exceeds Width.
+	wrapped := lipgloss.NewStyle().Width(width).Render(flat)
+	lines := strings.Split(wrapped, "\n")
+	if len(lines) <= maxLines {
+		return wrapped
+	}
+	out := make([]string, 0, maxLines)
+	out = append(out, lines[:maxLines-1]...)
+	// Glue the remainder onto the final visible line so `truncate` can
+	// stamp an ellipsis if (and only if) there's still overflow.
+	rest := strings.TrimSpace(strings.Join(lines[maxLines-1:], " "))
+	out = append(out, truncate(rest, width))
+	return strings.Join(out, "\n")
+}
+
 func padRight(s string, n int) string {
 	if lipgloss.Width(s) >= n {
 		return s
@@ -1142,94 +1219,162 @@ func newSkillDelegate(statusOf func(string) RowStatus) skillDelegate {
 	}
 }
 
-func (d skillDelegate) Height() int                             { return 2 }
+// Height returns 3 so each row has one title line plus a two-line
+// wrapped description. The previous single-line description budget
+// truncated anything past ~70 ASCII cells with "…", which made even
+// modestly-sized SKILL.md descriptions look cut off. Two lines holds the
+// typical 100-200 char description in full.
+func (d skillDelegate) Height() int                             { return 3 }
 func (d skillDelegate) Spacing() int                            { return 1 }
 func (d skillDelegate) Update(_ tea.Msg, _ *list.Model) tea.Cmd { return nil }
+
+// descLines is the number of wrapped description lines the delegate
+// renders below the title row. Kept as a const so tests can pin the
+// contract without exporting the delegate's internals.
+const skillDelegateDescLines = 2
+
+// rowChrome is the per-row palette resolved from a delegate based on the
+// current selection state. Bundling these lets Render reduce its branch
+// count: the selected/unselected fork lives in `chromeFor` instead of
+// inline.
+type rowChrome struct {
+	bullet string
+	title  lipgloss.Style
+	desc   lipgloss.Style
+	slug   lipgloss.Style
+	bar    string
+}
+
+// chromeFor returns the styled glyphs + paragraph styles used by Render.
+// Bullet markers are the same display width (3 cells: glyph + glyph +
+// trailing space) on selected and unselected rows so titles don't
+// jitter horizontally as the cursor moves.
+func (d skillDelegate) chromeFor(selected bool) rowChrome {
+	if selected {
+		return rowChrome{
+			bullet: d.selectedBullet.Render("▸ ✦"),
+			title:  d.selectedTitle,
+			desc:   d.selectedDesc,
+			slug:   d.selectedSlug,
+			bar:    d.cursorBar.Render(" │ "),
+		}
+	}
+	return rowChrome{
+		bullet: d.normalBullet.Render("· ✧"),
+		title:  d.normalTitle,
+		desc:   d.normalDesc,
+		slug:   d.slug,
+		bar:    d.normalBullet.Render(" · "),
+	}
+}
+
+// rowBudgets carries the per-column width budgets used by Render to
+// truncate / wrap each piece of a row. Extracting the math lets Render
+// stay within the cyclomatic ceiling without scattering the layout
+// arithmetic across the body.
+type rowBudgets struct {
+	titleBudget int
+	slugBudget  int
+	descBudget  int
+	showSlug    bool
+}
+
+// computeBudgets derives the column widths for a row. Budget math has
+// to be done with the slug in mind: leftLine is
+//
+//	bullet(3) + " "(1) + title(titleBudget) + badge(0 or 2)
+//
+// rightLine is `slug(slugBudget)` plus at least one space of gap
+// between them. Reserving 7 cells (4 for bullet+space, 2 for the badge
+// slot, 1 for the gap) keeps the row inside the list width regardless
+// of badge state, so a row doesn't reflow when a download badge
+// appears. The description budget mirrors the title budget for visual
+// alignment (3-cell bar + 3 cells of margin).
+func computeBudgets(width int, showSlug bool) rowBudgets {
+	b := rowBudgets{
+		titleBudget: width - 6,
+		descBudget:  width - 6,
+		showSlug:    showSlug,
+	}
+	if b.descBudget < 1 {
+		b.descBudget = 1
+	}
+	if !showSlug {
+		return b
+	}
+	b.slugBudget = max(16, width/3)
+	if b.slugBudget > width-7 {
+		b.slugBudget = max(0, width-7)
+	}
+	b.titleBudget = width - b.slugBudget - 7
+	if b.titleBudget < 1 {
+		b.titleBudget = 1
+	}
+	return b
+}
+
+// renderTitleRow assembles the leftLine + optional gap + right-side
+// slug. Lifted out of Render so it can return the assembled string
+// without nesting a second `if` inside the main flow.
+func renderTitleRow(c rowChrome, row SkillRow, b rowBudgets, badge string, width int) string {
+	titleText := truncate(row.Title(), b.titleBudget)
+	leftLine := c.bullet + " " + c.title.Render(titleText) + badge
+	if !b.showSlug || b.slugBudget <= 0 {
+		return leftLine
+	}
+	rightLine := c.slug.Render(truncate(row.Slug, b.slugBudget))
+	gap := width - lipgloss.Width(leftLine) - lipgloss.Width(rightLine)
+	if gap < 1 {
+		gap = 1
+	}
+	return leftLine + strings.Repeat(" ", gap) + rightLine
+}
+
+// descRows returns the wrapped description lines, padded out to
+// skillDelegateDescLines so the delegate always writes exactly
+// Height() rows regardless of the input length. A short description
+// shouldn't shift the next row up onto its blank line — that would
+// scramble the bubbles list layout (which assumes Height() is
+// constant).
+func descRows(desc string, budget int) []string {
+	body := wrapToLines(desc, budget, skillDelegateDescLines)
+	lines := strings.Split(body, "\n")
+	for len(lines) < skillDelegateDescLines {
+		lines = append(lines, "")
+	}
+	return lines
+}
+
+func (d skillDelegate) badgeFor(slug string) string {
+	if d.statusOf == nil {
+		return ""
+	}
+	return d.statusBadges[d.statusOf(slug)]
+}
 
 func (d skillDelegate) Render(w io.Writer, m list.Model, index int, item list.Item) {
 	row, ok := item.(SkillRow)
 	if !ok {
 		return
 	}
-
-	selected := index == m.Index()
 	width := m.Width()
 	if width <= 0 {
 		width = 40
 	}
-
-	// Bullet markers are the same display width (3 cells: glyph + glyph +
-	// trailing space) on selected and unselected rows so titles don't
-	// jitter horizontally as the cursor moves.
-	bullet := d.normalBullet.Render("· ✧")
-	title := d.normalTitle
-	desc := d.normalDesc
-	slug := d.slug
-	bar := d.normalBullet.Render(" · ")
-	if selected {
-		bullet = d.selectedBullet.Render("▸ ✦")
-		title = d.selectedTitle
-		desc = d.selectedDesc
-		slug = d.selectedSlug
-		bar = d.cursorBar.Render(" │ ")
-	}
-
-	// Per-row download status badge, if any. The map's zero value ("") covers
-	// StatusIdle as well as a nil statusOf.
-	badge := ""
-	if d.statusOf != nil {
-		badge = d.statusBadges[d.statusOf(row.Slug)]
-	}
-
-	// Only render the right-side slug column when it adds information — i.e.
-	// when the slug isn't just the canonical Slugify(name). When they
-	// effectively match, the column is pure noise (the title already says it).
-	//
-	// Budget math has to be done with the slug in mind: leftLine is
-	//   bullet(3) + " "(1) + title(titleBudget) + badge(0 or 2)
-	// rightLine is
-	//   slug(slugBudget)
-	// plus at least one space of gap between them. Reserving 7 cells
-	// (4 for bullet+space, 2 for the badge slot, 1 for the gap) keeps the
-	// row inside the list width regardless of badge state, so a row doesn't
-	// reflow when a download badge appears.
+	chrome := d.chromeFor(index == m.Index())
 	showSlug := row.Slug != "" && row.Name != "" && !slugMatchesName(row.Slug, row.Name)
-	slugBudget := 0
-	titleBudget := width - 6
-	if showSlug {
-		slugBudget = max(16, width/3)
-		if slugBudget > width-7 {
-			slugBudget = max(0, width-7)
-		}
-		titleBudget = width - slugBudget - 7
-		if titleBudget < 1 {
-			titleBudget = 1
-		}
+	budgets := computeBudgets(width, showSlug)
+	badge := d.badgeFor(row.Slug)
+
+	rows := make([]string, 0, 1+skillDelegateDescLines)
+	rows = append(rows, renderTitleRow(chrome, row, budgets, badge, width))
+	// Description rows: cursor bar + wrapped description line. The bar
+	// extends across every description row so the selected-row indicator
+	// is a continuous vertical glyph rather than a single tick.
+	for _, dl := range descRows(row.Desc, budgets.descBudget) {
+		rows = append(rows, chrome.bar+chrome.desc.Render(dl))
 	}
-	titleText := truncate(row.Title(), titleBudget)
-	descText := truncate(strings.ReplaceAll(row.Desc, "\n", " "), width-6)
-
-	// Line 1: bullet + title (left), faint slug (right) — gap-filled so the
-	// slug right-aligns when there's room. The badge sits between the title
-	// and the slug.
-	leftLine := bullet + " " + title.Render(titleText) + badge
-	line1 := leftLine
-	if showSlug && slugBudget > 0 {
-		slugText := truncate(row.Slug, slugBudget)
-		rightLine := slug.Render(slugText)
-		gap := width - lipgloss.Width(leftLine) - lipgloss.Width(rightLine)
-		if gap < 1 {
-			gap = 1
-		}
-		line1 = leftLine + strings.Repeat(" ", gap) + rightLine
-	}
-
-	// Line 2: cursor bar + description.
-	line2 := bar + desc.Render(descText)
-
-	fmt.Fprint(w, line1)
-	fmt.Fprintln(w)
-	fmt.Fprint(w, line2)
+	fmt.Fprint(w, strings.Join(rows, "\n"))
 }
 
 func max(a, b int) int {
