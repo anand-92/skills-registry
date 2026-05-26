@@ -1345,13 +1345,6 @@ func descRows(desc string, budget int) []string {
 	return lines
 }
 
-func (d skillDelegate) badgeFor(slug string) string {
-	if d.statusOf == nil {
-		return ""
-	}
-	return d.statusBadges[d.statusOf(slug)]
-}
-
 func (d skillDelegate) Render(w io.Writer, m list.Model, index int, item list.Item) {
 	row, ok := item.(SkillRow)
 	if !ok {
@@ -1364,7 +1357,9 @@ func (d skillDelegate) Render(w io.Writer, m list.Model, index int, item list.It
 	chrome := d.chromeFor(index == m.Index())
 	showSlug := row.Slug != "" && row.Name != "" && !slugMatchesName(row.Slug, row.Name)
 	budgets := computeBudgets(width, showSlug)
-	badge := d.badgeFor(row.Slug)
+	// Per-row download status badge. The map's zero value ("") covers
+	// StatusIdle, so no nil/missing check is needed.
+	badge := d.statusBadges[d.statusOf(row.Slug)]
 
 	rows := make([]string, 0, 1+skillDelegateDescLines)
 	rows = append(rows, renderTitleRow(chrome, row, budgets, badge, width))
