@@ -54,9 +54,6 @@ type PurgeFlowModel struct {
 
 	width, height int
 	sparkleIdx    int
-
-	deleted int
-	failed  int
 }
 
 type purgeLoadedMsg struct {
@@ -120,8 +117,6 @@ func (m PurgeFlowModel) handleSpinner(msg spinner.TickMsg) (tea.Model, tea.Cmd) 
 
 func (m PurgeFlowModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.state != purgeStateConfirm {
-		// During scan/delete the only meaningful interaction is the
-		// global Bubble Tea cancellation, handled by HubProgram.
 		return m, nil
 	}
 	return m.handleConfirmKey(msg)
@@ -181,8 +176,6 @@ func (m PurgeFlowModel) handleLoaded(msg purgeLoadedMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m PurgeFlowModel) handleDone(msg purgeDoneMsg) (tea.Model, tea.Cmd) {
-	m.deleted = msg.deleted
-	m.failed = msg.failed
 	if msg.err != nil {
 		return m, flowExitCmd("✗ purge: "+flattenErr(msg.err), false)
 	}
@@ -215,13 +208,12 @@ func purgeConfirmPrompt(skills []scan.Skill) string {
 		labels = append(labels, k)
 	}
 	sort.Strings(labels)
-	var lines []string
-	lines = append(lines,
+	lines := []string{
 		"Removes every local SKILL.md folder discovered under your known dot-folders.",
 		"The registry repo is not touched.",
 		"",
 		"Breakdown:",
-	)
+	}
 	for _, src := range labels {
 		lines = append(lines, fmt.Sprintf("  · %s (%d folder(s))", src, bySource[src]))
 	}
