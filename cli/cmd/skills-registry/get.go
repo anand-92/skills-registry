@@ -93,7 +93,11 @@ func runGet(ctx context.Context, slug, dest string) error {
 // the final on-disk path plus any sibling folder that was reused. Shared by
 // the `get` command and the inline-download path in the `list` TUI.
 func DownloadSkill(ctx context.Context, client *registry.Client, slug, destFlag string) (finalDest, reused string, err error) {
-	finalDest, reused = resolveDest(slug, destFlag, cache.CacheRoot())
+	defaultParent := cache.CacheRoot()
+	if defaultParent == "" || !filepath.IsAbs(defaultParent) {
+		return "", "", fmt.Errorf("resolve cache root (set HOME or XDG_CACHE_HOME, or pass --dest)")
+	}
+	finalDest, reused = resolveDest(slug, destFlag, defaultParent)
 	if err := os.MkdirAll(finalDest, 0o755); err != nil {
 		return "", "", err
 	}
