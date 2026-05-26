@@ -3,19 +3,60 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"github.com/anand-92/skills-registry/cli/internal/cache"
 )
 
 func TestResolveDest(t *testing.T) {
-	t.Run("empty dest uses cwd default", func(t *testing.T) {
-		cwd := t.TempDir()
-		got, reused := resolveDest("agp-9-upgrade", "", cwd)
-		want := filepath.Join(cwd, ".agents", "skills", "agp_9_upgrade")
+	t.Run("empty dest uses default parent", func(t *testing.T) {
+		// Production callers pass cache.CacheRoot() as the default parent
+		// (issue #29: skills must land under ~/.cache/skills-mcp/skills/,
+		// not the cwd-relative .agents/skills tree the old code produced).
+		parent := t.TempDir()
+		got, reused := resolveDest("agp-9-upgrade", "", parent)
+		want := filepath.Join(parent, "agp_9_upgrade")
 		if got != want {
 			t.Fatalf("dest = %q, want %q", got, want)
 		}
 		if reused != "" {
 			t.Fatalf("reused = %q, want empty", reused)
+		}
+	})
+
+	t.Run("empty dest in production uses cache.CacheRoot()", func(t *testing.T) {
+		// Regression guard for issue #29: DownloadSkill resolves its
+		// default parent to cache.CacheRoot(), so an empty --dest must
+		// produce a path rooted at the global cache (~/.cache/skills-mcp/
+		// skills) — never the cwd's .agents/ directory.
+		t.Setenv("XDG_CACHE_HOME", "")
+		home := t.TempDir()
+		t.Setenv("HOME", home)
+		got, _ := resolveDest("agp-9-upgrade", "", cache.CacheRoot())
+		want := filepath.Join(home, ".cache", "skills-mcp", "skills", "agp_9_upgrade")
+		if got != want {
+			t.Fatalf("dest = %q, want %q", got, want)
+		}
+		// And the path explicitly does NOT live in cwd/.agents (issue #29).
+		cwd, _ := os.Getwd()
+		stray := filepath.Join(cwd, ".agents") + string(filepath.Separator)
+		if strings.HasPrefix(got, stray) {
+			t.Fatalf("dest %q must not live under %q", got, stray)
+		}
+	})
+
+	t.Run("empty dest honors XDG_CACHE_HOME", func(t *testing.T) {
+		// cache.CacheRoot() respects XDG_CACHE_HOME, so callers using it
+		// as the default parent automatically inherit that override. This
+		// pins the behaviour for users (and CI runners) that move the
+		// cache off the default ~/.cache location.
+		xdg := t.TempDir()
+		t.Setenv("XDG_CACHE_HOME", xdg)
+		got, _ := resolveDest("agp_9_upgrade", "", cache.CacheRoot())
+		want := filepath.Join(xdg, "skills-mcp", "skills", "agp_9_upgrade")
+		if got != want {
+			t.Fatalf("dest = %q, want %q", got, want)
 		}
 	})
 
