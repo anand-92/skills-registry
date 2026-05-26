@@ -132,33 +132,31 @@ func performUpdate(ctx context.Context, opts updateOpts) (updateResult, error) {
 	if client == nil {
 		client = &http.Client{Timeout: updateHTTPTimeout}
 	}
-	targetVersion := opts.version
-	if targetVersion == "latest" && opts.tarball == "" {
-		tag, tagErr := latestReleaseTag(ctx, client, updateAPIBase(opts), opts.repo)
-		if tagErr != nil {
-			return updateResult{}, tagErr
+	if opts.version == "latest" && opts.tarball == "" {
+		tag, err := latestReleaseTag(ctx, client, updateAPIBase(opts), opts.repo)
+		if err != nil {
+			return updateResult{}, err
 		}
-		targetVersion = tag
-		opts.version = targetVersion
+		opts.version = tag
 	}
 	res := updateResult{
-		Version: targetVersion,
+		Version: opts.version,
 		Asset:   asset,
 		Path:    binPath,
 	}
-	if !opts.force && versionMatches(version, targetVersion) {
-		res.Message = fmt.Sprintf("already on %s", targetVersion)
+	if !opts.force && versionMatches(version, opts.version) {
+		res.Message = fmt.Sprintf("already on %s", opts.version)
 		return res, nil
 	}
 	if opts.dryRun {
-		res.Message = fmt.Sprintf("would install %s from %s to %s", targetVersion, opts.repo, binPath)
+		res.Message = fmt.Sprintf("would install %s from %s to %s", opts.version, opts.repo, binPath)
 		return res, nil
 	}
 	if err := installUpdate(ctx, client, opts, asset, binPath); err != nil {
 		return updateResult{}, err
 	}
 	res.Updated = true
-	res.Message = fmt.Sprintf("updated skills-registry to %s → %s", targetVersion, binPath)
+	res.Message = fmt.Sprintf("updated skills-registry to %s → %s", opts.version, binPath)
 	return res, nil
 }
 
@@ -275,8 +273,7 @@ func versionMatches(current, target string) bool {
 // same filesystem — cross-FS renames fail on Linux, and a Rename to a
 // running binary is the one POSIX-portable way to replace a live exe.
 func installUpdate(ctx context.Context, client *http.Client, opts updateOpts, asset, binPath string) error {
-	dir := filepath.Dir(binPath)
-	tmpDir, err := os.MkdirTemp(dir, ".skills-registry-update-")
+	tmpDir, err := os.MkdirTemp(filepath.Dir(binPath), ".skills-registry-update-")
 	if err != nil {
 		return fmt.Errorf("create update temp dir: %w", err)
 	}
@@ -284,10 +281,11 @@ func installUpdate(ctx context.Context, client *http.Client, opts updateOpts, as
 
 	tarball := filepath.Join(tmpDir, asset)
 	if opts.tarball != "" {
-		if err := copyFile(opts.tarball, tarball, 0o644); err != nil {
-			return err
-		}
-	} else if err := downloadUpdateAsset(ctx, client, updateReleaseBase(opts), opts.repo, opts.version, asset, tarball); err != nil {
+		err = copyFile(opts.tarball, tarball)
+	} else {
+		err = downloadUpdateAsset(ctx, client, updateReleaseBase(opts), opts.repo, opts.version, asset, tarball)
+	}
+	if err != nil {
 		return err
 	}
 
@@ -389,13 +387,13 @@ func extractUpdateBinary(tarball, dest string) error {
 	return fmt.Errorf("binary skills-registry not found in update archive")
 }
 
-func copyFile(src, dst string, perm os.FileMode) error {
+func copyFile(src, dst string) error {
 	in, err := os.Open(src)
 	if err != nil {
 		return fmt.Errorf("open %s: %w", src, err)
 	}
 	defer in.Close()
-	out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, perm)
+	out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
 	if err != nil {
 		return fmt.Errorf("create %s: %w", dst, err)
 	}
