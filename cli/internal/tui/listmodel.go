@@ -773,7 +773,7 @@ func (m ListModel) renderPreviewPanel() string {
 		descBlock := PreviewBody.Width(innerWidth).Render(desc)
 
 		gradient := miniGradientBar(m.preview.Width-2, m.sparkleIdx)
-		dest := ".agents/skills/" + row.Slug + "/"
+		dest := "~/.cache/skills-mcp/skills/" + row.Slug + "/"
 		var hint string
 		switch m.rowState[row.Slug] {
 		case StatusDownloading:
@@ -919,7 +919,7 @@ func (m ListModel) renderHelp() string {
 		{"g / G", "jump to top / bottom"},
 		{"/", "start filtering"},
 		{"esc", "clear filter (or quit)"},
-		{"enter", "download into ./.agents/skills/<slug>/"},
+		{"enter", "download into ~/.cache/skills-mcp/skills/<slug>/"},
 	}
 	if m.delete != nil {
 		rows = append(rows, struct{ k, d string }{"d", "remove selected skill"})

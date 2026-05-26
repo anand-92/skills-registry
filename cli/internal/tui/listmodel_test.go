@@ -11,6 +11,12 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
+// testDownloadDest is the canonical stub dest used by the download-flow
+// tests. The literal value is opaque — tests only verify the model echoes
+// it back unchanged — but anchoring it on a single const keeps the
+// fixture path consistent across cases.
+const testDownloadDest = "/tmp/cache/skills-mcp/skills/foo_skill"
+
 // stubDownloader returns a Downloader that records every slug it sees and
 // returns the configured dest/err.
 type stubDownloader struct {
@@ -62,7 +68,7 @@ func enterKey() tea.KeyMsg { return tea.KeyMsg{Type: tea.KeyEnter} }
 func deleteKey() tea.KeyMsg { return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("d")} }
 
 func TestEnter_TriggersDownload(t *testing.T) {
-	stub := &stubDownloader{dest: "/tmp/.agents/skills/foo_skill"}
+	stub := &stubDownloader{dest: testDownloadDest}
 	m := readyModel(t, stub.fn())
 
 	got, cmd := m.Update(enterKey())
@@ -98,7 +104,7 @@ func TestEnter_TriggersDownload(t *testing.T) {
 }
 
 func TestEnter_IgnoresDoublePressWhileDownloading(t *testing.T) {
-	stub := &stubDownloader{dest: "/tmp/.agents/skills/foo_skill"}
+	stub := &stubDownloader{dest: testDownloadDest}
 	m := readyModel(t, stub.fn())
 
 	// First enter starts the download.
@@ -128,7 +134,7 @@ func TestEnter_NoOpAfterTerminalStatus(t *testing.T) {
 		{"err", StatusErr},
 	} {
 		t.Run(st.name, func(t *testing.T) {
-			stub := &stubDownloader{dest: "/tmp/.agents/skills/foo_skill"}
+			stub := &stubDownloader{dest: testDownloadDest}
 			m := readyModel(t, stub.fn())
 			m.rowState["foo_skill"] = st.status
 
@@ -152,7 +158,7 @@ func TestEnter_NoOpAfterTerminalStatus(t *testing.T) {
 }
 
 func TestDownloadDoneMsg_Success(t *testing.T) {
-	stub := &stubDownloader{dest: "/tmp/.agents/skills/foo_skill"}
+	stub := &stubDownloader{dest: testDownloadDest}
 	m := readyModel(t, stub.fn())
 	// Pretend the download is already in flight.
 	m.rowState["foo_skill"] = StatusDownloading
@@ -160,7 +166,7 @@ func TestDownloadDoneMsg_Success(t *testing.T) {
 
 	got, _ := m.Update(downloadDoneMsg{
 		slug: "foo_skill",
-		dest: "/tmp/.agents/skills/foo_skill",
+		dest: testDownloadDest,
 	})
 	mm := got.(ListModel)
 
@@ -173,10 +179,10 @@ func TestDownloadDoneMsg_Success(t *testing.T) {
 	if !mm.toastOK {
 		t.Fatal("toastOK = false, want true on success")
 	}
-	if !strings.Contains(mm.toast, "Foo") || !strings.Contains(mm.toast, "/tmp/.agents/skills/foo_skill") {
+	if !strings.Contains(mm.toast, "Foo") || !strings.Contains(mm.toast, testDownloadDest) {
 		t.Fatalf("toast = %q, want it to mention Foo and dest path", mm.toast)
 	}
-	if mm.rowDest["foo_skill"] != "/tmp/.agents/skills/foo_skill" {
+	if mm.rowDest["foo_skill"] != testDownloadDest {
 		t.Fatalf("rowDest[foo_skill] = %q, want dest path", mm.rowDest["foo_skill"])
 	}
 }
