@@ -112,7 +112,8 @@ func TestPurgeLocalSkillsEmptyIsNoOp(t *testing.T) {
 
 // TestPathUnderAnyRootMatchesSubdir is the targeted unit test for the
 // allow-list helper: a folder directly inside a root must match; a
-// folder outside every root must not.
+// folder outside every root must not; the root itself must NOT match
+// (otherwise os.RemoveAll on it would wipe every sibling skill).
 func TestPathUnderAnyRootMatchesSubdir(t *testing.T) {
 	root := t.TempDir()
 	if !pathUnderAnyRoot(filepath.Join(root, "child"), []string{root}) {
@@ -123,6 +124,12 @@ func TestPathUnderAnyRootMatchesSubdir(t *testing.T) {
 	}
 	if pathUnderAnyRoot(filepath.Join(root, "..", "sibling"), []string{root}) {
 		t.Error("../sibling traversal should not match")
+	}
+	// Regression guard: the root itself must be refused. A skill.Folder
+	// resolving to its allow-list root would otherwise let os.RemoveAll
+	// wipe the entire root and every sibling skill under it.
+	if pathUnderAnyRoot(root, []string{root}) {
+		t.Error("root itself should not match")
 	}
 }
 

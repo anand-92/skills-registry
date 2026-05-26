@@ -116,6 +116,13 @@ func (m PurgeFlowModel) handleSpinner(msg spinner.TickMsg) (tea.Model, tea.Cmd) 
 }
 
 func (m PurgeFlowModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// ctrl+c is honored in every state so the user can force-quit even
+	// while a scan or delete is in flight. Without this, HubProgram
+	// delegates every key to the active flow and the user has no way
+	// out until the background operation completes.
+	if msg.String() == "ctrl+c" {
+		return m, tea.Quit
+	}
 	if m.state != purgeStateConfirm {
 		return m, nil
 	}

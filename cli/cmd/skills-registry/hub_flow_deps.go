@@ -178,7 +178,11 @@ func discoverLocalSkills() ([]scan.Skill, error) {
 // summary. We require the folder to sit inside a known dot-folder
 // (resolved via DiscoverSources) before touching it so a bad caller
 // can't pass an arbitrary path.
-func purgeLocalSkills(_ context.Context, skills []scan.Skill) (int, int, error) {
+//
+// The context is checked at the top of each iteration so a force-quit
+// (ctrl+c) from the TUI halts the delete loop between folders rather
+// than running it to completion in the background.
+func purgeLocalSkills(ctx context.Context, skills []scan.Skill) (int, int, error) {
 	if len(skills) == 0 {
 		return 0, 0, nil
 	}
@@ -188,6 +192,9 @@ func purgeLocalSkills(_ context.Context, skills []scan.Skill) (int, int, error) 
 	}
 	var deleted, failed int
 	for _, sk := range skills {
+		if err := ctx.Err(); err != nil {
+			return deleted, failed, err
+		}
 		if !pathUnderAnyRoot(sk.Folder, allowed) {
 			failed++
 			continue
@@ -223,19 +230,32 @@ func purgeAllowedRoots() ([]string, error) {
 }
 
 // pathUnderAnyRoot reports whether folder is contained in any of the
-// supplied root directories. Uses filepath.Rel so the comparison is
-// performed on cleaned paths and rejects ".." traversals.
+// supplied root directories. Both sides are resolved to absolute paths
+// before comparing with filepath.Rel so traversals (".."), absolute
+// drift, and the root-itself case are rejected — only proper
+// descendants match. The root case matters: if a skill's Folder ever
+// resolves to the root itself (e.g. `~/.claude/skills`), `os.RemoveAll`
+// on it would wipe every sibling skill under that root.
 func pathUnderAnyRoot(folder string, roots []string) bool {
-	abs, err := filepath.Abs(folder)
+	absFolder, err := filepath.Abs(folder)
 	if err != nil {
 		return false
 	}
 	for _, root := range roots {
-		rel, err := filepath.Rel(root, abs)
+		absRoot, err := filepath.Abs(root)
 		if err != nil {
 			continue
 		}
-		if rel == "." || (!strings.HasPrefix(rel, "..") && !filepath.IsAbs(rel)) {
+		rel, err := filepath.Rel(absRoot, absFolder)
+		if err != nil {
+			continue
+		}
+		// rel == "." means folder IS the root — refuse. The HasPrefix
+		// check catches "../sibling" traversals; IsAbs catches the
+		// case where filepath.Rel returns an absolute path because the
+		// two paths share no common base (e.g. different volumes on
+		// Windows).
+		if rel != "." && !strings.HasPrefix(rel, "..") && !filepath.IsAbs(rel) {
 			return true
 		}
 	}
