@@ -136,16 +136,30 @@ func TestPathUnderAnyRootMatchesSubdir(t *testing.T) {
 // mustChdir is a t.Helper that swaps the test goroutine's working
 // directory to dir and registers a cleanup to restore the prior cwd.
 // Used by tests that need a deterministic CWD for DiscoverSources.
+//
+// os.Getwd() may legitimately fail at test start when an earlier test
+// in the same package chdir'd into a t.TempDir() and that dir was
+// cleaned up at test exit (Go testing leaves the goroutine's cwd
+// pointing at a deleted directory). In that case there is nothing to
+// "restore" on cleanup, so we record an empty prev and skip the chdir
+// back. This is the documented pattern for resilient cwd handling in
+// the Go test corpus.
 func mustChdir(t *testing.T, dir string) {
 	t.Helper()
 	prev, err := os.Getwd()
 	if err != nil {
-		t.Fatalf("getwd: %v", err)
+		// Previous cwd is gone (likely a deleted t.TempDir from an
+		// earlier test). Don't try to restore; chdir to `dir` is still
+		// safe because Chdir uses the path argument directly.
+		prev = ""
 	}
 	if err := os.Chdir(dir); err != nil {
 		t.Fatalf("chdir %s: %v", dir, err)
 	}
 	t.Cleanup(func() {
+		if prev == "" {
+			return
+		}
 		if err := os.Chdir(prev); err != nil {
 			t.Logf("restore chdir %s: %v", prev, err)
 		}
