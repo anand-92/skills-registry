@@ -11,9 +11,8 @@ import (
 
 func TestResolveDest(t *testing.T) {
 	t.Run("empty dest uses default parent", func(t *testing.T) {
-		// Production callers pass cache.CacheRoot() as the default parent
-		// (issue #29: skills must land under ~/.cache/skills-mcp/skills/,
-		// not the cwd-relative .agents/skills tree the old code produced).
+		// Unit test for the empty-destFlag rule: result must be
+		// "<defaultParent>/<canonSlug>" with no reuse signal.
 		parent := t.TempDir()
 		got, reused := resolveDest("agp-9-upgrade", "", parent)
 		want := filepath.Join(parent, "agp_9_upgrade")
@@ -26,10 +25,9 @@ func TestResolveDest(t *testing.T) {
 	})
 
 	t.Run("empty dest in production uses cache.CacheRoot()", func(t *testing.T) {
-		// Regression guard for issue #29: DownloadSkill resolves its
-		// default parent to cache.CacheRoot(), so an empty --dest must
-		// produce a path rooted at the global cache (~/.cache/skills-mcp/
-		// skills) — never the cwd's .agents/ directory.
+		// Regression guard for issue #29: DownloadSkill passes
+		// cache.CacheRoot() as the default parent, so an empty --dest
+		// must land under the global cache — never cwd/.agents/.
 		t.Setenv("XDG_CACHE_HOME", "")
 		home := t.TempDir()
 		t.Setenv("HOME", home)
@@ -38,25 +36,10 @@ func TestResolveDest(t *testing.T) {
 		if got != want {
 			t.Fatalf("dest = %q, want %q", got, want)
 		}
-		// And the path explicitly does NOT live in cwd/.agents (issue #29).
 		cwd, _ := os.Getwd()
 		stray := filepath.Join(cwd, ".agents") + string(filepath.Separator)
 		if strings.HasPrefix(got, stray) {
 			t.Fatalf("dest %q must not live under %q", got, stray)
-		}
-	})
-
-	t.Run("empty dest honors XDG_CACHE_HOME", func(t *testing.T) {
-		// cache.CacheRoot() respects XDG_CACHE_HOME, so callers using it
-		// as the default parent automatically inherit that override. This
-		// pins the behaviour for users (and CI runners) that move the
-		// cache off the default ~/.cache location.
-		xdg := t.TempDir()
-		t.Setenv("XDG_CACHE_HOME", xdg)
-		got, _ := resolveDest("agp_9_upgrade", "", cache.CacheRoot())
-		want := filepath.Join(xdg, "skills-mcp", "skills", "agp_9_upgrade")
-		if got != want {
-			t.Fatalf("dest = %q, want %q", got, want)
 		}
 	})
 

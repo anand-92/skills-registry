@@ -107,10 +107,9 @@ func DownloadSkill(ctx context.Context, client *registry.Client, slug, destFlag 
 // name stays in lockstep with the registry's canonical slug.
 //
 // Rules:
-//  1. Empty destFlag → "<defaultParent>/<canonSlug>". Production callers pass
-//     cache.CacheRoot() (i.e. ~/.cache/skills-mcp/skills) so downloads land in
-//     the documented global cache rather than polluting the current working
-//     directory with a stray ./.agents/ tree (issue #29).
+//  1. Empty destFlag → "<defaultParent>/<canonSlug>". Production callers
+//     pass cache.CacheRoot() so downloads land in the global cache, not
+//     a stray ./.agents/ tree under cwd (issue #29).
 //  2. destFlag with a basename that slugifies to canonSlug → use as-is.
 //  3. Otherwise destFlag is treated as a parent directory and canonSlug is appended.
 //
