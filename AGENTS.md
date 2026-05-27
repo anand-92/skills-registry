@@ -148,16 +148,15 @@ Bare invocation should always land somewhere safe: non-TTY → no Bubble Tea (ca
 
 ### The dashboard hub
 
-`cli/cmd/skills-registry/hub.go:runHub` is a launch loop. Each iteration:
+`cli/cmd/skills-registry/hub.go:runHub` launches a single alt-screen Bubble Tea program once config exists. The heavy lifting lives in `cli/internal/tui/hub_program.go:HubProgram`, which embeds the dashboard (`HubModel`) and every action flow inside one long-lived model:
 
 1. Loads the registry config (fail-fast on read error).
-2. Builds `tui.HubModel` with the repo + a closure that lazily lists the registry to populate the skill count.
-3. Optionally injects a pending toast (set by the previous iteration's dispatcher).
-4. Runs the Bubble Tea program with `tea.WithAltScreen()`.
-5. Reads `Selection()` from the post-quit model and switches into the matching per-action helper (`runBrowseFromHub`, `runSyncFromHub`, `runAddFromHub`, `runPublishFromHub`, `runRemoveFromHub`, `runSettingsFromHub`).
-6. Each helper returns a `hubToast` (text + ok/err) that's threaded into the next loop iteration.
+2. Builds `tui.HubProgram` with the repo, the six card grid actions, and a closure that lazily lists the registry to populate the skill count.
+3. Runs the Bubble Tea program with `tea.WithAltScreen()`.
+4. `HubProgram` catches `hubLaunchMsg`, swaps in the matching embedded flow (`ListModel` / `SyncFlowModel` / `AddFlowModel` / `PublishFlowModel` / `PurgeFlowModel` / `SettingsModel`), and returns to the dashboard when the flow emits `flowExitMsg`.
+5. On exit, `HubProgram` seeds the toast into the hub model and re-runs the count loader so the user sees "✓ added from owner/repo" / "✗ remove: slug not found" / "✓ purged 12 local skill folder(s)" / etc.
 
-The loop terminates on `Quit()` (q / esc / ctrl+c) or when a launcher-level error makes continuing pointless. Per-action failures land as red toasts; the user sees them on the next frame and can retry.
+Per-action errors land as red toasts; the user sees them on the next frame and can retry. The hub terminates on `Quit()` (q / esc / ctrl+c) or empty selection.
 
 ### Why a separate Go binary?
 
@@ -237,7 +236,7 @@ Two additional safeguards run outside the middleware chain:
 | `validateRelPath` | `cli/internal/registry/registry.go` | Path-traversal guard for repo-relative paths. Rejects `..`, absolute paths, and empty strings. Applied to every file before blob upload or `git add`. |
 | `bareRouteDecision` | `cli/cmd/skills-registry/main.go` | Pure routing function for `skills-registry` with no subcommand: returns `bareRouteHelp` / `bareRouteWizard` / `bareRouteHub` / `bareRouteError`. |
 | `runWizard` | `cli/cmd/skills-registry/wizard.go` | First-run alt-screen Bubble Tea wizard. 8 steps, owns scan/repo-create/push/agent-install/cleanup/MCP-snippet/done. |
-| `runHub` | `cli/cmd/skills-registry/hub.go` | Returning-user dashboard loop: launches `tui.HubModel`, dispatches the picked action, seeds the next frame with a toast. |
+| `runHub` | `cli/cmd/skills-registry/hub.go` | Returning-user dashboard: loads config, launches `tui.HubProgram` which embeds `HubModel` and every action flow. |
 | `runBootstrap` | `cli/cmd/skills-registry/bootstrap.go` | Headless / scripted bootstrap (legacy flow, still useful for CI). |
 | `HostedMCPURL` / `MCPJSONSnippet` | `cli/internal/bootstrap/install.go` | The Streamable-HTTP URL the wizard prints (`https://mcp.skills-registry.dev/mcp`) and the JSON formatter for `mcp.json`. No binary lookup; no install path. |
 | `WizardStepMCPConnect` / `startMCPConnect` | `cli/internal/tui/wizard.go`, `cli/internal/tui/wizard_steps.go` | Step 7 of the wizard — purely informational. Synchronous snapshot of `MCPJSONSnippet()`, no goroutine. |
