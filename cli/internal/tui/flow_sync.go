@@ -123,6 +123,7 @@ func (m SyncFlowModel) handleSelectKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			fmt.Sprintf("Push %d skill(s) to %s?", len(m.picked), m.repo),
 			"Only the registry repo is updated.",
 			"Yes, push",
+			"Continue with the registry write",
 		)
 		m.state = syncStateConfirm
 		return m, nil

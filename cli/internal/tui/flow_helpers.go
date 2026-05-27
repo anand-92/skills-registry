@@ -64,9 +64,9 @@ func flowFooter(width, sparkleIdx int, keys []flowKey) string {
 	return lipgloss.JoinHorizontal(lipgloss.Top, left, strings.Repeat(" ", gap), right)
 }
 
-func newFlowConfirm(title, prompt, yesLabel string) ChoiceModel {
+func newFlowConfirm(title, prompt, yesLabel, yesHint string) ChoiceModel {
 	return NewChoice(title, prompt, []Choice{
-		{Value: "yes", Label: yesLabel, Hint: "Continue with the registry write"},
+		{Value: "yes", Label: yesLabel, Hint: yesHint},
 		{Value: "no", Label: "Cancel", Hint: "Make no changes"},
 	})
 }
