@@ -1,8 +1,3 @@
-<coding_guidelines>
----
-
-## Project Overview
-
 `skills-registry` is **two coordinated deliverables** shipped from a single repo:
 
 | Piece | Language | Distribution | Job |
@@ -148,10 +143,6 @@ Bare invocation should always land somewhere safe: non-TTY → no Bubble Tea (ca
 
 Per-action errors land as red toasts; the user sees them on the next frame and can retry. The hub terminates on `Quit()` (q / esc / ctrl+c) or empty selection.
 
-### Why a separate Go binary?
-
-The `building-glamorous-tuis` skill recommends Charmbracelet (Go), which has no first-class Python equivalent. Building the bootstrap UX in Bubble Tea required a Go binary, so `install.sh` drops the Go binary directly and **the user never sees Python**. The hosted MCP server is a service users connect to, not software they install.
-
 ### Two upload paths in the CLI: `gh api` for day-to-day writes, `git push` for bootstrap
 
 The **hosted MCP server is read-only.** It runs in a Docker container with no shell state — no `gh`, no `git`, no SSH, no `user.email` — and its only credential is an installation-scoped GitHub App token fetched per request. `search_skills` and `get_skill` are served via the GitHub Contents API; the server never invokes anything that could mutate the user's repo.
@@ -270,24 +261,6 @@ Two additional safeguards run outside the middleware chain:
 4. **Windows installer.** `install.sh` is POSIX-only. The Go binary builds for `windows/amd64`, but Windows users need an `install.ps1` (and `gh.exe` lookup in `FindGH`) for the same one-shot experience. `skills-registry update` mirrors this restriction — it accepts only `darwin/linux × amd64/arm64`.
 5. **`get_skill_md` does no schema validation** of the SKILL.md it serves. Malformed skills are silently skipped by `search_skills`; a verbose-mode error log in the hosted server would help diagnose user reports.
 6. **No server-side cache.** Every `get_skill` reads through to GitHub. A short-TTL in-process cache keyed on tree SHA would cut latency for hot slugs.
-7. **Codex unsupported by the hosted MCP.** Codex's TOML config only accepts stdio MCPs. Either Codex needs Streamable HTTP, or we'd ship a stdio→HTTP shim for Codex specifically.
-
-### Carried over from the previous design
-
-- **Frontmatter parser is YAML-ish.** Both Python and Go avoid a real YAML dep; multi-line values, lists, and nested keys are silently dropped. Fine for the current scope.
-
----
-
-## CI / CD
-
-- `.github/workflows/ci.yml` — two parallel jobs: `server` (ruff lint + format + pytest with coverage from `infa-not-for-users/`) and `cli` (vet + staticcheck + deadcode + gocyclo + build + test from `cli/`). Both must be green to merge.
-- `.github/workflows/release.yml` — **auto-releases on every push to `main` touching `cli/**` or `install.sh`**. Path filter is the release decision; commits that only touch the hosted server (`infa-not-for-users/`), docs, workflows, or the website do not release. The hosted server is redeployed by Railway directly from `main` — no PyPI publish, no wheel build, no version tag for the server.
-  1. Tests gate (go vet + staticcheck + deadcode + gocyclo + go test) — must pass.
-  2. Tag job computes the next semver from the latest `vX.Y.Z` tag, then pushes a lightweight tag on the triggering commit. CI never commits version bumps back to `main`.
-  3. Builds the Go CLI for `darwin/amd64`, `darwin/arm64`, `linux/amd64`, `linux/arm64`, `windows/amd64`.
-  4. Creates one GitHub Release `vX.Y.Z` containing 4 tarballs + 1 zip. `install.sh` downloads from this same "latest" release.
-- Force a non-patch bump with `gh workflow run release.yml -f bump=minor` (or `major`).
-- **Gaps:** No Python version matrix for the server, no OS matrix for server tests, no Dependabot, no codecov upload (coverage XML is generated but not uploaded), no integration tests that actually call GitHub. The Go test gate in `release.yml` is a near-duplicate of `ci.yml`'s `cli` job; change one, check the other.
 
 ---
 
@@ -302,41 +275,6 @@ Two additional safeguards run outside the middleware chain:
 
 ---
 
-## How to Work on This Repo
-
-```bash
-# Setup — CLI (the user-facing piece)
-(cd cli && go mod download)
-
-# Setup — hosted MCP server (maintainer-only)
-(cd infa-not-for-users && uv sync --group dev)
-
-# Install Go dead-code analyzers (versions pinned to match CI; see
-# .github/workflows/ci.yml — bump in lockstep)
-go install honnef.co/go/tools/cmd/staticcheck@2025.1.1
-go install golang.org/x/tools/cmd/deadcode@v0.45.0
-go install github.com/fzipp/gocyclo/cmd/gocyclo@v0.6.0
-
-# Run all tests
-(cd infa-not-for-users && uv run pytest -v --cov=skills_mcp --cov-report=term-missing)
-(cd cli && go vet ./... && go test ./...)
-
-# Dead-code detection (Go)
-(cd cli && staticcheck ./... && deadcode -test ./...)
-
-# Cyclomatic-complexity ceiling (Go)
-(cd cli && gocyclo -over 15 -ignore "_test" .)
-
-# Lint & format Python
-(cd infa-not-for-users && uv run ruff check . && uv run ruff format .)
-
-# Smoke-test the Go binary locally
-(cd cli && go build -o /tmp/skills-registry ./cmd/skills-registry && /tmp/skills-registry --help)
-
-# Build & run the hosted server in Docker locally (maintainer-only)
-(cd infa-not-for-users && docker build -t skills-registry-mcp:dev . && docker run --rm -p 8000:8000 skills-registry-mcp:dev)
-```
-
 When making changes:
 - **FastMCP server conventions.** Construct servers with `FastMCP(name, instructions=..., version=__version__)`. Register every tool through `@server.tool(...)` with an `annotations={...}` dict carrying client-gating safety hints — `readOnlyHint` / `destructiveHint` / `openWorldHint`. Use `Args:` docstring sections only when per-parameter descriptions add real value (e.g. mutually-exclusive params); single-arg tools don't need them. Don't pass `title` or `idempotentHint` without a concrete consumer.
 - **Naming conventions are enforced by lint.** Authoritative table in `CONTRIBUTING.md` ("Naming conventions"). Summary:
@@ -350,4 +288,4 @@ When making changes:
 - Add or update tests for any behavior change. Untested behavior is undefined.
 - Use conventional-commit prefixes (`feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `chore:`).
 - **Hosted server safety:** any new server code that talks to GitHub MUST route through `GitHubAppClient` so it gets an installation-scoped token (with the right retry policy) for the requesting user. Never assume `git`, `ssh`, `gh`, or `user.name`/`user.email` are configured — the container has none of them. The server stays read-only; if a feature genuinely needs to write, route it through the CLI instead.
-</coding_guidelines>
+
