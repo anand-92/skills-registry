@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -67,11 +68,21 @@ func TestPurgeFlowLoadedSkillsEntersConfirmState(t *testing.T) {
 	}
 	mm.width, mm.height = 120, 40
 	v := mm.View()
-	wants := []string{"Delete 2 local skill", "~/.claude/skills", "~/.cursor/skills"}
+	wants := []string{
+		"Delete 2 local skill",
+		"~/.claude/skills",
+		"~/.cursor/skills",
+		"· foo",
+		"· bar",
+		"Delete the local folders shown above",
+	}
 	for _, w := range wants {
 		if !strings.Contains(v, w) {
 			t.Errorf("confirm View() missing %q:\n%s", w, v)
 		}
+	}
+	if strings.Contains(v, "Continue with the registry write") {
+		t.Errorf("confirm View() leaks registry-write copy:\n%s", v)
 	}
 }
 
@@ -201,23 +212,72 @@ func TestPurgeFlowMissingDiscoverDepErrors(t *testing.T) {
 	}
 }
 
-// TestPurgeFlowConfirmPromptIncludesBreakdown smoke-tests the helper
-// that builds the per-source confirmation body.
-func TestPurgeFlowConfirmPromptIncludesBreakdown(t *testing.T) {
+// TestPurgeFlowConfirmPromptListsSkillsBySource pins the body shape:
+// each source appears once, its slugs sorted underneath, and no leftover
+// folder-count copy from the old aggregate breakdown.
+func TestPurgeFlowConfirmPromptListsSkillsBySource(t *testing.T) {
 	got := purgeConfirmPrompt([]scan.Skill{
-		{Slug: "a", Source: "~/.claude/skills"},
-		{Slug: "b", Source: "~/.claude/skills"},
-		{Slug: "c", Source: "~/.cursor/skills"},
+		{Slug: "beta", Source: "~/.claude/skills"},
+		{Slug: "alpha", Source: "~/.claude/skills"},
+		{Slug: "gamma", Source: "~/.cursor/skills"},
 	})
 	wants := []string{
-		"Removes every local SKILL.md folder",
-		"~/.claude/skills (2 folder(s))",
-		"~/.cursor/skills (1 folder(s))",
+		"Removes these local SKILL.md folders",
+		"The registry repo is not touched.",
+		"~/.claude/skills",
+		"  · alpha",
+		"  · beta",
+		"~/.cursor/skills",
+		"  · gamma",
 	}
 	for _, w := range wants {
 		if !strings.Contains(got, w) {
 			t.Errorf("prompt missing %q:\n%s", w, got)
 		}
+	}
+	for _, banned := range []string{"Breakdown:", "folder(s))"} {
+		if strings.Contains(got, banned) {
+			t.Errorf("prompt should not contain %q:\n%s", banned, got)
+		}
+	}
+	// Sources rendered alphabetically: ~/.claude/skills < ~/.cursor/skills.
+	if idxClaude, idxCursor := strings.Index(got, "~/.claude/skills"), strings.Index(got, "~/.cursor/skills"); idxClaude < 0 || idxCursor < 0 || idxClaude > idxCursor {
+		t.Errorf("sources out of order:\n%s", got)
+	}
+	// Each slug rendered once.
+	for _, slug := range []string{"alpha", "beta", "gamma"} {
+		if strings.Count(got, "· "+slug) != 1 {
+			t.Errorf("slug %q rendered %d times:\n%s", slug, strings.Count(got, "· "+slug), got)
+		}
+	}
+}
+
+// TestPurgeFlowConfirmPromptTruncatesLongLists pins the cap behavior so
+// a 200-skill registry doesn't drown the alt-screen panel.
+func TestPurgeFlowConfirmPromptTruncatesLongLists(t *testing.T) {
+	skills := make([]scan.Skill, 0, purgeConfirmMaxListed+5)
+	for i := 0; i < purgeConfirmMaxListed+5; i++ {
+		skills = append(skills, scan.Skill{
+			Slug:   fmt.Sprintf("skill-%03d", i),
+			Source: "~/.claude/skills",
+		})
+	}
+	got := purgeConfirmPrompt(skills)
+	if !strings.Contains(got, "…and 5 more") {
+		t.Errorf("truncation footer missing:\n%s", got)
+	}
+	// The very last slug should NOT be in the body — it lives behind the cap.
+	if strings.Contains(got, fmt.Sprintf("skill-%03d", purgeConfirmMaxListed+4)) {
+		t.Errorf("expected to truncate skill past cap, got:\n%s", got)
+	}
+}
+
+// TestPurgeFlowConfirmPromptUnknownSource keeps the fallback when a
+// scan.Skill arrives without a Source label.
+func TestPurgeFlowConfirmPromptUnknownSource(t *testing.T) {
+	got := purgeConfirmPrompt([]scan.Skill{{Slug: "orphan"}})
+	if !strings.Contains(got, "(unknown)") || !strings.Contains(got, "· orphan") {
+		t.Errorf("missing unknown-source fallback:\n%s", got)
 	}
 }
 

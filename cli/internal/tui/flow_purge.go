@@ -177,6 +177,7 @@ func (m PurgeFlowModel) handleLoaded(msg purgeLoadedMsg) (tea.Model, tea.Cmd) {
 		fmt.Sprintf("Delete %d local skill folder(s)?", len(msg.skills)),
 		purgeConfirmPrompt(msg.skills),
 		"Yes, delete them",
+		"Delete the local folders shown above",
 	)
 	m.state = purgeStateConfirm
 	return m, nil
@@ -198,34 +199,52 @@ func (m PurgeFlowModel) handleDone(msg purgeDoneMsg) (tea.Model, tea.Cmd) {
 	)
 }
 
-// purgeConfirmPrompt builds the descriptive prompt body, listing the
-// per-source breakdown so the user sees concretely what they're about
-// to remove.
+// purgeConfirmPrompt builds the descriptive prompt body, listing every
+// candidate skill grouped by source so the user sees concretely what
+// they're about to remove. Capped at purgeConfirmMaxListed entries with
+// a "...and N more" footer so the panel doesn't blow out on large
+// registries.
 func purgeConfirmPrompt(skills []scan.Skill) string {
-	bySource := map[string]int{}
+	bySource := map[string][]string{}
 	for _, sk := range skills {
-		label := sk.Source
-		if label == "" {
-			label = "(unknown)"
+		src := sk.Source
+		if src == "" {
+			src = "(unknown)"
 		}
-		bySource[label]++
+		bySource[src] = append(bySource[src], sk.Slug)
 	}
-	labels := make([]string, 0, len(bySource))
+	sources := make([]string, 0, len(bySource))
 	for k := range bySource {
-		labels = append(labels, k)
+		sources = append(sources, k)
 	}
-	sort.Strings(labels)
+	sort.Strings(sources)
 	lines := []string{
-		"Removes every local SKILL.md folder discovered under your known dot-folders.",
-		"The registry repo is not touched.",
+		"Removes these local SKILL.md folders. The registry repo is not touched.",
 		"",
-		"Breakdown:",
 	}
-	for _, src := range labels {
-		lines = append(lines, fmt.Sprintf("  · %s (%d folder(s))", src, bySource[src]))
+	listed := 0
+	for _, src := range sources {
+		slugs := bySource[src]
+		sort.Strings(slugs)
+		lines = append(lines, src)
+		for _, slug := range slugs {
+			if listed >= purgeConfirmMaxListed {
+				continue
+			}
+			lines = append(lines, "  · "+slug)
+			listed++
+		}
+	}
+	if remaining := len(skills) - listed; remaining > 0 {
+		lines = append(lines, fmt.Sprintf("  …and %d more", remaining))
 	}
 	return strings.Join(lines, "\n")
 }
+
+// purgeConfirmMaxListed caps the number of slugs rendered in the
+// confirm panel. Registries with hundreds of skills would otherwise
+// overflow the alt-screen viewport.
+const purgeConfirmMaxListed = 20
 
 func (m PurgeFlowModel) View() string {
 	return flowFrame("Skills Registry · Purge Local", m.width, m.sparkleIdx, m.renderBody(), m.renderFooter())

@@ -161,6 +161,7 @@ func (m AddFlowModel) handleSelectKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			fmt.Sprintf("Publish %d skill(s) from %s to %s?", len(m.picked), m.sourceText, m.repo),
 			"Only the registry repo is updated.",
 			"Yes, publish",
+			"Continue with the registry write",
 		)
 		m.state = addStateConfirm
 		return m, nil
