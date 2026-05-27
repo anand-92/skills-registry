@@ -31,7 +31,7 @@ func newListCmd() *cobra.Command {
 	)
 	cmd := &cobra.Command{
 		Use:   "list",
-		Short: "Browse + durably install registry skills into selected agent dot-folders",
+		Short: "List registry skills (interactive mode also supports durable installation)",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if jsonout.Enabled() {
 				return runListJSON(cmd.Context(), queryFlag)

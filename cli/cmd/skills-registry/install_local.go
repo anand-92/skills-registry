@@ -119,6 +119,9 @@ func copyTree(src, dst string) error {
 		if walkErr != nil {
 			return walkErr
 		}
+		if d.Type()&os.ModeSymlink != 0 {
+			return fmt.Errorf("symlinks are not allowed: %s", path)
+		}
 		rel, err := filepath.Rel(src, path)
 		if err != nil {
 			return err
@@ -139,15 +142,18 @@ func copyFileForInstall(src, dst string) error {
 	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
 		return err
 	}
+	info, err := os.Lstat(src)
+	if err != nil {
+		return err
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("symlinks are not allowed: %s", src)
+	}
 	srcFD, err := os.Open(src)
 	if err != nil {
 		return err
 	}
 	defer srcFD.Close()
-	info, err := srcFD.Stat()
-	if err != nil {
-		return err
-	}
 	dstFD, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, info.Mode().Perm())
 	if err != nil {
 		return err

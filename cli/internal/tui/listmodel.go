@@ -899,6 +899,12 @@ func (m ListModel) renderPreviewPanel() string {
 // install button, an in-flight spinner badge, or a success/error chip.
 func (m ListModel) renderPreviewHint(row SkillRow) string {
 	muted := lipgloss.NewStyle().Foreground(ColMuted)
+	innerWidth := max(8, m.preview.Width-2)
+	clampDetail := func(s string, reserve int) string {
+		s = strings.ReplaceAll(s, "\n", " · ")
+		return truncate(s, innerWidth-reserve)
+	}
+
 	switch m.rowState[row.Slug] {
 	case StatusInstalling:
 		return lipgloss.NewStyle().Foreground(ColYellow).Bold(true).Render("⟳ installing") +
@@ -911,16 +917,20 @@ func (m ListModel) renderPreviewHint(row SkillRow) string {
 		case 1:
 			return lipgloss.NewStyle().Foreground(ColAccent).Bold(true).Render("✓ installed") +
 				muted.Render(" → ") +
-				lipgloss.NewStyle().Foreground(ColPeach).Italic(true).Render(paths[0])
+				lipgloss.NewStyle().Foreground(ColPeach).Italic(true).Render(clampDetail(paths[0], 15))
 		default:
 			return lipgloss.NewStyle().Foreground(ColAccent).Bold(true).Render("✓ installed") +
 				muted.Render(" → ") +
 				lipgloss.NewStyle().Foreground(ColPeach).Italic(true).Render(strconv.Itoa(len(paths))+" agents")
 		}
 	case StatusErr:
+		errText := ""
+		if err := m.rowErr[row.Slug]; err != nil {
+			errText = clampDetail(err.Error(), 12)
+		}
 		return lipgloss.NewStyle().Foreground(ColDanger).Bold(true).Render("✗ failed") +
 			muted.Render(" — ") +
-			lipgloss.NewStyle().Foreground(ColInk).Render(m.rowErr[row.Slug].Error())
+			lipgloss.NewStyle().Foreground(ColInk).Render(errText)
 	case StatusRemoving:
 		return lipgloss.NewStyle().Foreground(ColYellow).Bold(true).Render("⟳ removing") +
 			muted.Render(" from registry")

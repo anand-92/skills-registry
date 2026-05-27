@@ -326,6 +326,9 @@ func TestHubProgramLaunchesManageFlow(t *testing.T) {
 			Rows: func() ([]SkillRow, error) {
 				return []SkillRow{{Slug: "demo", Name: "Demo"}}, nil
 			},
+			Install: func(context.Context, string, []any) ([]string, error) {
+				return nil, nil
+			},
 			InstallTargets: func() []InstallTarget {
 				return []InstallTarget{
 					{Display: "Universal", Locked: true, Value: "u"},
@@ -341,6 +344,9 @@ func TestHubProgramLaunchesManageFlow(t *testing.T) {
 	}
 	if list.loadTargets == nil {
 		t.Error("manage flow did not propagate InstallTargets loader")
+	}
+	if list.install == nil {
+		t.Error("manage flow did not propagate Installer")
 	}
 	if cmd == nil {
 		t.Fatal("launching manage should return init command")

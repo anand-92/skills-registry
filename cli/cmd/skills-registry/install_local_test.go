@@ -136,3 +136,24 @@ func TestCopyTreePropagatesSourceError(t *testing.T) {
 		t.Logf("error type %T: %v", err, err)
 	}
 }
+
+// TestCopyTreeRejectsSymlink verifies that copyTree fails if any entry
+// is a symbolic link.
+func TestCopyTreeRejectsSymlink(t *testing.T) {
+	src := t.TempDir()
+	target := filepath.Join(src, "target")
+	if err := os.WriteFile(target, []byte("target"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	sym := filepath.Join(src, "symlink")
+	err := os.Symlink(target, sym)
+	if err != nil {
+		// On Windows, if we don't have symlink privileges, we skip the test.
+		t.Skip("skipping symlink test; symlink creation failed (likely due to Windows privileges):", err)
+	}
+
+	dst := t.TempDir()
+	if err := copyTree(src, dst); err == nil {
+		t.Fatal("copyTree succeeded but should have rejected symlink")
+	}
+}

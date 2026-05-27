@@ -26,9 +26,9 @@ import (
 // consistent {pushed, skipped} shape. `skipped` carries slugs that
 // were discovered inside the source but already exist in the registry
 // (the safe "no-op" path) so the consumer can decide whether to flag
-// drift. `installed` is the per-slug list of absolute paths the durable
-// install copied into; ordering matches the order of `pushed` so a
-// consumer can correlate without re-parsing the slug from the path.
+// drift. `installed` maps each published slug to the list of absolute
+// paths the durable install copied into, allowing the consumer to
+// correlate trivially via map lookup (e.g. looking up a slug from `pushed`).
 type addJSONResult struct {
 	Pushed    []string            `json:"pushed"`
 	Skipped   []string            `json:"skipped"`
