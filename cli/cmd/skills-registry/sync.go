@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -119,10 +118,7 @@ func planSync(ctx context.Context) (syncPlan, error) {
 	if err != nil {
 		return syncPlan{}, err
 	}
-	home, _ := os.UserHomeDir()
-	cwd, _ := os.Getwd()
-	sources := scan.DiscoverSources(home, cwd, nil, dotDirsFromAgents())
-	local, err := scan.Discover(sources)
+	local, err := discoverLocalSkills()
 	if err != nil {
 		return syncPlan{}, err
 	}
