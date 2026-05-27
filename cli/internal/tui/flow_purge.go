@@ -224,12 +224,15 @@ func purgeConfirmPrompt(skills []scan.Skill) string {
 	}
 	listed := 0
 	for _, src := range sources {
+		if listed >= purgeConfirmMaxListed {
+			break
+		}
 		slugs := bySource[src]
 		sort.Strings(slugs)
 		lines = append(lines, src)
 		for _, slug := range slugs {
 			if listed >= purgeConfirmMaxListed {
-				continue
+				break
 			}
 			lines = append(lines, "  · "+slug)
 			listed++

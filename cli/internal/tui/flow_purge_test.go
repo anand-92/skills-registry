@@ -281,6 +281,37 @@ func TestPurgeFlowConfirmPromptUnknownSource(t *testing.T) {
 	}
 }
 
+// TestPurgeFlowConfirmPromptCapDoesNotEmitOrphanHeaders ensures the cap
+// short-circuits at the source level too — if every slug under a source
+// would land past the cap, the source header is suppressed entirely so
+// the user doesn't see bare labels with no bullets underneath.
+func TestPurgeFlowConfirmPromptCapDoesNotEmitOrphanHeaders(t *testing.T) {
+	var skills []scan.Skill
+	for i := 0; i < purgeConfirmMaxListed; i++ {
+		skills = append(skills, scan.Skill{
+			Slug:   fmt.Sprintf("a-skill-%02d", i),
+			Source: "~/.alpha/skills",
+		})
+	}
+	for i := 0; i < 3; i++ {
+		skills = append(skills, scan.Skill{
+			Slug:   fmt.Sprintf("b-skill-%02d", i),
+			Source: "~/.beta/skills",
+		})
+	}
+	skills = append(skills, scan.Skill{Slug: "c-skill", Source: "~/.gamma/skills"})
+
+	got := purgeConfirmPrompt(skills)
+	for _, banned := range []string{"~/.beta/skills", "~/.gamma/skills"} {
+		if strings.Contains(got, banned) {
+			t.Errorf("orphan source header %q rendered past cap:\n%s", banned, got)
+		}
+	}
+	if !strings.Contains(got, "…and 4 more") {
+		t.Errorf("expected '…and 4 more' footer, got:\n%s", got)
+	}
+}
+
 // TestHubProgramLaunchesPurgeFlow verifies the HubProgram dispatch wires
 // the Purge action to a PurgeFlowModel — the regression test for the
 // hub_program.go switch statement.
