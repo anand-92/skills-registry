@@ -32,6 +32,31 @@ func TestSlugify(t *testing.T) {
 	}
 }
 
+func TestNormalizeForMatch(t *testing.T) {
+	cases := map[string]string{
+		// Separator and case variants of one skill all collapse to one key.
+		"simplify-swarm": "simplifyswarm",
+		"simplify_swarm": "simplifyswarm",
+		"Simplify Swarm": "simplifyswarm",
+		"SIMPLIFYSWARM":  "simplifyswarm",
+		// Mixed separators / punctuation are stripped entirely (unlike
+		// Slugify, which would keep them as underscores).
+		"AGP-9 Upgrade":   "agp9upgrade",
+		"  trim  me  ":    "trimme",
+		"already-normal9": "alreadynormal9",
+	}
+	for in, want := range cases {
+		if got := NormalizeForMatch(in); got != want {
+			t.Errorf("NormalizeForMatch(%q) = %q, want %q", in, got, want)
+		}
+	}
+	// The defining contrast with Slugify: separators vanish rather than
+	// becoming underscores, so hyphen/underscore/space variants unify.
+	if NormalizeForMatch("simplify-swarm") != NormalizeForMatch("simplify_swarm") {
+		t.Fatal("hyphen and underscore variants must normalize equal")
+	}
+}
+
 func TestDiscoverParsesFrontmatter(t *testing.T) {
 	root := t.TempDir()
 	writeSkill(t, root, "code-review",
@@ -88,6 +113,28 @@ func TestDedupeAgainstFiltersByRemoteSlugs(t *testing.T) {
 	out := DedupeAgainst(local, remote)
 	if len(out) != 2 || out[0].Slug != "alpha" || out[1].Slug != "gamma" {
 		t.Fatalf("dedupe wrong: %+v", out)
+	}
+}
+
+// TestDedupeAgainstNormalizesSeparatorsAndCase pins the sync bug fix: a
+// local dot-folder slugged "simplify_swarm" must be recognized as already
+// in the registry when the registry stores it as the folder
+// "simplify-swarm" (hyphen). Before normalization, the literal map lookup
+// missed and sync offered to re-push an already-published skill.
+func TestDedupeAgainstNormalizesSeparatorsAndCase(t *testing.T) {
+	local := []Skill{
+		{Slug: "simplify_swarm"}, // on disk under ~/.claude/skills/simplify_swarm
+		{Slug: "code_review"},    // genuinely absent upstream
+	}
+	// Registry folder names as returned by client.Slugs — note the hyphen
+	// and the differing case, neither of which should defeat the match.
+	remote := map[string]struct{}{
+		"simplify-swarm": {},
+		"Other-Skill":    {},
+	}
+	out := DedupeAgainst(local, remote)
+	if len(out) != 1 || out[0].Slug != "code_review" {
+		t.Fatalf("expected only code_review missing, got %+v", out)
 	}
 }
 
@@ -216,7 +263,23 @@ func TestEntriesForCleanup_MatchesSlugifiedFolderName(t *testing.T) {
 	}
 	entries := EntriesForCleanup(sources, registrySlugs)
 	if len(entries) != 2 {
-		t.Fatalf("expected 2 entries (slugified match), got %d: %+v", len(entries), entries)
+		t.Fatalf("expected 2 entries (normalized match), got %d: %+v", len(entries), entries)
+	}
+}
+
+func TestEntriesForCleanup_NormalizesRegistrySlugSeparators(t *testing.T) {
+	// The mirror of the slugified-folder case: here the dot-folder uses the
+	// underscore form while the *registry* stored the skill under a hyphen
+	// (e.g. published by an older client or imported via `add`). The literal
+	// + Slugify(name) lookup used to miss this because the registry side was
+	// never normalized; NormalizeForMatch on both sides fixes it.
+	tmp := t.TempDir()
+	skillsDir := filepath.Join(tmp, ".factory", "skills")
+	writeSkill(t, skillsDir, "simplify_swarm", "---\nname: simplify_swarm\n---\n")
+	sources := []Source{{Path: skillsDir, Label: "~/.factory/skills"}}
+	entries := EntriesForCleanup(sources, map[string]struct{}{"simplify-swarm": {}})
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 entry (normalized registry-slug match), got %d: %+v", len(entries), entries)
 	}
 }
 

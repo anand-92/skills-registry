@@ -62,7 +62,26 @@ In English:
 
 So `"AGP-9 Upgrade"` → `"agp_9_upgrade"`. So does `"agp_9_upgrade"`. So does `"   AGP_9-Upgrade   "`. The function is idempotent (`Slugify(Slugify(x)) == Slugify(x)` for any input) and produces the same result on either side of the language boundary — the slug a Python publish produces is byte-identical to what a Go discovery would compute for the same display name.
 
-The CLI exploits this to handle a real-world ambiguity: agent dot-folders often contain skills whose folder names use hyphens (`agp-9-upgrade`), but the registry stores them under the canonical slug (`agp_9_upgrade`). Both the `get` destination resolver (`resolveDest`) and the `remove` dot-folder sweep (`matchSlugChildren`) match by literal name OR `Slugify(name)` to keep the two namespaces from drifting.
+## NormalizeForMatch
+
+`Slugify` derives the *stored* slug; it is **not** used to *compare* two identifiers. Comparison goes through a separate, more aggressive normalizer:
+
+```go
+// cli/internal/scan/scan.go
+func NormalizeForMatch(s string) string {
+    return slugRe.ReplaceAllString(strings.ToLower(strings.TrimSpace(s)), "")
+}
+```
+
+```python
+# src/skills_mcp/github_api.py
+def normalize_for_match(name: str) -> str:
+    return _SLUG_RE.sub("", name.strip().lower())
+```
+
+The difference from `Slugify` is that separators are **removed** rather than collapsed to `_`, so `"simplify-swarm"`, `"simplify_swarm"`, and `"Simplify Swarm"` all map to the same key `"simplifyswarm"`. Use it only to test whether two identifiers name the *same skill*; never to derive a stored slug or a path (a separator-free key is not a valid folder name).
+
+The CLI uses it to handle a real-world ambiguity: agent dot-folders and the registry routinely store the same skill under different separator/case conventions (e.g. a dot-folder `simplify_swarm` vs a registry folder `simplify-swarm`). Normalizing **both sides** of every comparison keeps the namespaces from drifting. The comparison sites are: the `sync` dedupe (`scan.DedupeAgainst`), the post-publish cleanup (`scan.EntriesForCleanup`), the `get` destination resolver (`resolveDest`), and the `remove` dot-folder sweep (`matchSlugChildren`). Before this was centralized, `sync` compared a `Slugify`'d local slug against an un-normalized registry name and reported already-published skills as "missing from the registry".
 
 ## Frontmatter
 

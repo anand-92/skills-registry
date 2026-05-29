@@ -114,20 +114,20 @@ func DownloadSkill(ctx context.Context, client *registry.Client, slug, destFlag 
 //  1. Empty destFlag → "<defaultParent>/<canonSlug>". Production callers
 //     pass cache.CacheRoot() so downloads land in the global cache, not
 //     a stray ./.agents/ tree under cwd (issue #29).
-//  2. destFlag with a basename that slugifies to canonSlug → use as-is.
+//  2. destFlag whose basename normalizes (NormalizeForMatch) to canonSlug → use as-is.
 //  3. Otherwise destFlag is treated as a parent directory and canonSlug is appended.
 //
 // After resolving, the parent directory is scanned for an existing sibling
-// folder whose Slugify matches canonSlug. If one is found at a different path,
-// that path is returned instead (the second return value is the path that's
-// being reused, for user-facing logging). This prevents the
-// "agp-9-upgrade vs agp_9_upgrade" duplicate-folder bug.
+// folder whose normalized name (NormalizeForMatch) matches canonSlug. If one
+// is found at a different path, that path is returned instead (the second
+// return value is the path that's being reused, for user-facing logging).
+// This prevents the "agp-9-upgrade vs agp_9_upgrade" duplicate-folder bug.
 func resolveDest(slug, destFlag, defaultParent string) (finalDest, reused string) {
 	canonSlug := scan.Slugify(slug)
 	switch {
 	case destFlag == "":
 		finalDest = filepath.Join(defaultParent, canonSlug)
-	case scan.Slugify(filepath.Base(destFlag)) == canonSlug:
+	case scan.NormalizeForMatch(filepath.Base(destFlag)) == scan.NormalizeForMatch(canonSlug):
 		finalDest = destFlag
 	default:
 		finalDest = filepath.Join(destFlag, canonSlug)
@@ -139,7 +139,8 @@ func resolveDest(slug, destFlag, defaultParent string) (finalDest, reused string
 }
 
 // findSlugSibling returns the path of an existing directory under parent whose
-// name slugifies to canonSlug, if one exists.
+// name normalizes (NormalizeForMatch) to the same key as canonSlug, if one
+// exists.
 func findSlugSibling(parent, canonSlug string) (string, bool) {
 	entries, err := os.ReadDir(parent)
 	if err != nil {
@@ -149,7 +150,7 @@ func findSlugSibling(parent, canonSlug string) (string, bool) {
 		if !e.IsDir() {
 			continue
 		}
-		if scan.Slugify(e.Name()) == canonSlug {
+		if scan.NormalizeForMatch(e.Name()) == scan.NormalizeForMatch(canonSlug) {
 			return filepath.Join(parent, e.Name()), true
 		}
 	}
