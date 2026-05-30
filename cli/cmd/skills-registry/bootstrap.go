@@ -562,7 +562,7 @@ func pushLocalSkills(ctx context.Context, client *registry.Client, local []scan.
 		// Brand-new repo — assume empty.
 		existing = map[string]struct{}{}
 	}
-	missing := scan.DedupeAgainst(local, existing)
+	missing, _ := scan.DedupeAgainst(local, existing)
 	if len(missing) == 0 {
 		return 0, nil
 	}

@@ -22,6 +22,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/anand-92/skills-registry/cli/internal/scan"
 )
 
 // FallbackPaths mirror the Python `gh.find_gh()` list so the CLI keeps
@@ -103,7 +105,26 @@ type Client struct {
 	MirrorRoot string
 }
 
-// New constructs a client with sensible defaults. Looks up `gh` if not set.
+// Resolve returns the actual slug in the registry that normalizes (NormalizeForMatch)
+// to the same key as the input slug. Returns (input, true, nil) on exact match,
+// (actual, true, nil) on normalized match, and (input, false, nil) when no
+// match exists.
+func (c *Client) Resolve(ctx context.Context, slug string) (string, bool, error) {
+	slugs, err := c.Slugs(ctx)
+	if err != nil {
+		return slug, false, err
+	}
+	if _, ok := slugs[slug]; ok {
+		return slug, true, nil
+	}
+	norm := scan.NormalizeForMatch(slug)
+	for actual := range slugs {
+		if scan.NormalizeForMatch(actual) == norm {
+			return actual, true, nil
+		}
+	}
+	return slug, false, nil
+}
 func New(repo, branch string) (*Client, error) {
 	gh, err := FindGH()
 	if err != nil {

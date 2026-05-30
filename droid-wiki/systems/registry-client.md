@@ -4,7 +4,7 @@ Active contributors: Nik Anand
 
 ## What it does
 
-The registry client is the wrapper around `gh api` that every read and single-skill write goes through. Both the Python MCP server and the Go CLI carry an implementation of the same contract: list the skills in a GitHub registry repo, download one slug into a destination folder, publish a slug atomically, and delete a slug atomically. The Python implementation is `RegistryClient` in `src/skills_mcp/registry_api.py`; the Go implementation is `registry.Client` in `cli/internal/registry/registry.go`. Both shell out to the user's authenticated `gh` CLI for every HTTP call — there is no embedded HTTP client, no `git` dependency, no SSH agent dependency.
+The registry client is the wrapper around `gh api` that every read and single-skill write goes through. Both the Python MCP server and the Go CLI carry an implementation of the same contract: list the skills in a GitHub registry repo, download one slug into a destination folder, publish a slug atomically, and delete a slug atomically. The Python implementation is `RegistryClient` in `infa-not-for-users/skills_mcp/github_api.py`; the Go implementation is `registry.Client` in `cli/internal/registry/registry.go`. Both shell out to the user's authenticated `gh` CLI for every HTTP call — there is no embedded HTTP client, no `git` dependency, no SSH agent dependency.
 
 The bulk-import path used by the wizard takes a different route entirely; see [bootstrap-push](bootstrap-push.md).
 
@@ -14,7 +14,7 @@ Desktop MCP clients (Claude Desktop, Cursor, VS Code) spawn the MCP server in a 
 
 ## Slugify
 
-Slugs are the registry's canonical identifier for a skill. Both implementations normalize a display name with the same regex (`[^a-z0-9]+` → `_`), trim leading and trailing underscores, and fall back to `"skill"` for an empty result. Python: `registry_api.slugify`. Go: `scan.Slugify` (in `cli/internal/scan/scan.go`). The function is identical in both languages so a skill named `"AGP-9 Upgrade"` always slugifies to `agp_9_upgrade` regardless of which side did the normalization.
+Slugs are the registry's canonical identifier for a skill. Both implementations normalize a display name with the same regex (`[^a-z0-9]+` → `_`), trim leading and trailing underscores, and fall back to `"skill"` for an empty result. Python: `github_api.slugify`. Go: `scan.Slugify` (in `cli/internal/scan/scan.go`). The function is identical in both languages so a skill named `"AGP-9 Upgrade"` always slugifies to `agp_9_upgrade` regardless of which side did the normalization.
 
 `Slugify` derives the *stored* slug. *Comparing* two identifiers ("is this dot-folder already in the registry?") goes through a separate normalizer — Go `scan.NormalizeForMatch`, Python `github_api.normalize_for_match` — which lowercases and **strips** every non-alphanumeric character (rather than collapsing runs to `_`). So `simplify-swarm`, `simplify_swarm`, and `Simplify Swarm` all compare equal. Both sides of a comparison are normalized, which is what lets `sync` recognize a local `simplify_swarm` folder as already published even when the registry stored it as `simplify-swarm`.
 
@@ -80,10 +80,10 @@ This is the fallback path; the wizard's primary route for first-time imports is 
 
 | File | Role |
 | --- | --- |
-| `src/skills_mcp/registry_api.py` | Python `RegistryClient`: `list_skills`, `download_skill`, `publish_skill`, `_publish_once`, `_list_tree_paths_under`. |
+| `infa-not-for-users/skills_mcp/github_api.py` | Python `RegistryClient`: `list_skills`, `download_skill`, `publish_skill`, `_publish_once`, `_list_tree_paths_under`, `slugify`, `normalize_for_match`. |
 | `cli/internal/registry/registry.go` | Go `registry.Client`: `List`, `Get`, `Publish`, `publishOnce`, `Delete`, `deleteOnce`, `uploadBlobs`, `bootstrapInitialCommit`. |
-| `src/skills_mcp/gh.py` | `find_gh`, `gh_api`, `GhApiError`. |
-| `src/skills_mcp/frontmatter.py` | Frontmatter parser used by `_parse_skill_md`. |
+| `infa-not-for-users/skills_mcp/github_app.py` | `GitHubAppClient`, `ensure_authed()`, `gh_api()` — every GitHub call goes through these. |
+| `infa-not-for-users/skills_mcp/frontmatter.py` | Frontmatter parser used by `_parse_skill_md`. |
 
 ## Cross-links
 

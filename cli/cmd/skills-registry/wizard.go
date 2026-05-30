@@ -213,7 +213,7 @@ func wizardPushMissing(ctx context.Context, client *registry.Client, skills []sc
 			return nil, fmt.Errorf("list registry slugs: %w", err)
 		}
 	}
-	missing := scan.DedupeAgainst(skills, existing)
+	missing, _ := scan.DedupeAgainst(skills, existing)
 	if len(missing) == 0 && onStatus != nil {
 		onStatus("registry already in sync — nothing to upload.")
 	}

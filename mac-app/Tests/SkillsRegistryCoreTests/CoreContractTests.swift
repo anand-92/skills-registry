@@ -11,6 +11,17 @@ final class SlugTests: XCTestCase {
         XCTAssertEqual(slugify(""), "skill")
         XCTAssertEqual(slugify("a.b.c"), "a_b_c")
     }
+
+    func testNormalizeForMatch() {
+        XCTAssertEqual(normalizeForMatch("simplify-swarm"), "simplifyswarm")
+        XCTAssertEqual(normalizeForMatch("simplify_swarm"), "simplifyswarm")
+        XCTAssertEqual(normalizeForMatch("Simplify Swarm"), "simplifyswarm")
+        XCTAssertEqual(normalizeForMatch("SIMPLIFYSWARM"), "simplifyswarm")
+        XCTAssertEqual(normalizeForMatch("AGP-9 Upgrade"), "agp9upgrade")
+        XCTAssertEqual(normalizeForMatch("  trim  me  "), "trimme")
+        XCTAssertEqual(normalizeForMatch("already-normal9"), "alreadynormal9")
+        XCTAssertEqual(normalizeForMatch("simplify-swarm"), normalizeForMatch("simplify_swarm"))
+    }
 }
 
 final class FuzzyScoreTests: XCTestCase {

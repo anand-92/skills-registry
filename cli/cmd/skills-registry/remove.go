@@ -120,9 +120,13 @@ func runRemove(ctx context.Context, slug string, yes, quietMode bool) (*removeRe
 	if err != nil {
 		return nil, err
 	}
-	canonSlug := scan.Slugify(slug)
-	if err := assertRemoteSlugExists(ctx, client, canonSlug, cfg.Repo); err != nil {
+	// Resolve the actual slug from the registry (handles separator/case drift).
+	canonSlug, found, err := client.Resolve(ctx, scan.Slugify(slug))
+	if err != nil {
 		return nil, err
+	}
+	if !found {
+		return nil, fmt.Errorf("slug %q not found in registry %s", slug, cfg.Repo)
 	}
 	if !yes && !quietMode {
 		ok, err := confirmRemove(canonSlug, cfg.Repo)

@@ -97,11 +97,18 @@ func DownloadSkill(ctx context.Context, client *registry.Client, slug, destFlag 
 	if defaultParent == "" || !filepath.IsAbs(defaultParent) {
 		return "", "", fmt.Errorf("resolve cache root (set HOME or XDG_CACHE_HOME, or pass --dest)")
 	}
-	finalDest, reused = resolveDest(slug, destFlag, defaultParent)
+
+	// Resolve the actual slug from the registry (handles separator/case drift).
+	canonSlug, _, err := client.Resolve(ctx, scan.Slugify(slug))
+	if err != nil {
+		return "", "", err
+	}
+
+	finalDest, reused = resolveDest(canonSlug, destFlag, defaultParent)
 	if err := os.MkdirAll(finalDest, 0o755); err != nil {
 		return "", "", err
 	}
-	if err := client.Get(ctx, scan.Slugify(slug), finalDest); err != nil {
+	if err := client.Get(ctx, canonSlug, finalDest); err != nil {
 		return "", "", err
 	}
 	return finalDest, reused, nil
@@ -146,11 +153,12 @@ func findSlugSibling(parent, canonSlug string) (string, bool) {
 	if err != nil {
 		return "", false
 	}
+	normalizedCanon := scan.NormalizeForMatch(canonSlug)
 	for _, e := range entries {
 		if !e.IsDir() {
 			continue
 		}
-		if scan.NormalizeForMatch(e.Name()) == scan.NormalizeForMatch(canonSlug) {
+		if scan.NormalizeForMatch(e.Name()) == normalizedCanon {
 			return filepath.Join(parent, e.Name()), true
 		}
 	}

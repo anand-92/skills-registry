@@ -14,7 +14,7 @@ Two implementations, one contract:
 
 | Language | Type | File |
 | --- | --- | --- |
-| Python | `SkillSummary(slug, name, description, path, tree_sha)` | `src/skills_mcp/registry_api.py` |
+| Python | `SkillSummary(slug, name, description, path, tree_sha)` | `infa-not-for-users/skills_mcp/github_api.py` |
 | Go | `scan.Skill{Slug, Name, Description, Folder, Source}` (local) and `registry.Summary{Slug, Name, Description, TreeSHA}` (remote) | `cli/internal/scan/scan.go`, `cli/internal/registry/registry.go` |
 
 Both languages frame "skill" as five-or-fewer fields:
@@ -32,7 +32,7 @@ Both languages frame "skill" as five-or-fewer fields:
 Slugs are the registry's canonical identifier. Two implementations, identical algorithm:
 
 ```python
-# src/skills_mcp/registry_api.py
+# infa-not-for-users/skills_mcp/github_api.py
 _SLUG_RE = re.compile(r"[^a-z0-9]+")
 
 def slugify(name: str) -> str:
@@ -74,7 +74,7 @@ func NormalizeForMatch(s string) string {
 ```
 
 ```python
-# src/skills_mcp/github_api.py
+# infa-not-for-users/skills_mcp/github_api.py
 def normalize_for_match(name: str) -> str:
     return _SLUG_RE.sub("", name.strip().lower())
 ```
@@ -132,8 +132,8 @@ Hidden entries (any path component starting with `.`) and `__pycache__` are filt
 
 | File | Role |
 | --- | --- |
-| `src/skills_mcp/registry_api.py` | `slugify`, `SkillSummary`, `_parse_skill_md`. |
-| `src/skills_mcp/frontmatter.py` | `parse_frontmatter` + `first_paragraph`. |
+| `infa-not-for-users/skills_mcp/github_api.py` | `slugify`, `SkillSummary`, `normalize_for_match`. |
+| `infa-not-for-users/skills_mcp/frontmatter.py` | `parse_frontmatter` + `first_paragraph`. |
 | `cli/internal/scan/scan.go` | `Slugify`, `Skill`, `Hash`, `Discover`, `parseFrontmatter`, `firstParagraph`. |
 | `cli/internal/registry/registry.go` | `Summary`, the on-the-wire mirror used by `client.List`. |
 

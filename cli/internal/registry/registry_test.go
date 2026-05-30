@@ -974,3 +974,53 @@ rm -f "$stdin_file"
 		}
 	}
 }
+
+func TestResolve(t *testing.T) {
+	bin, _ := stubGH(t, []map[string]any{
+		{
+			"key": "GET repos/x/y/contents/",
+			"body": []map[string]any{
+				{"name": "simplify-swarm", "type": "dir"},
+				{"name": "other", "type": "dir"},
+			},
+		},
+	})
+	c := &Client{GH: bin, Repo: "x/y", DefaultBranch: "main"}
+
+	// Exact match
+	got, found, err := c.Resolve(context.Background(), "simplify-swarm")
+	if err != nil || !found || got != "simplify-swarm" {
+		t.Errorf("Exact match failed: got=%q found=%v err=%v", got, found, err)
+	}
+
+	// Normalized match (case and separators)
+	// We need to re-stub because Slugs() is called again and previous entry was consumed
+	bin, _ = stubGH(t, []map[string]any{
+		{
+			"key": "GET repos/x/y/contents/",
+			"body": []map[string]any{
+				{"name": "simplify-swarm", "type": "dir"},
+			},
+		},
+	})
+	c.GH = bin
+	got, found, err = c.Resolve(context.Background(), "Simplify_Swarm")
+	if err != nil || !found || got != "simplify-swarm" {
+		t.Errorf("Normalized match failed: got=%q found=%v err=%v", got, found, err)
+	}
+
+	// Not found
+	bin, _ = stubGH(t, []map[string]any{
+		{
+			"key": "GET repos/x/y/contents/",
+			"body": []map[string]any{
+				{"name": "other", "type": "dir"},
+			},
+		},
+	})
+	c.GH = bin
+	got, found, err = c.Resolve(context.Background(), "missing")
+	if err != nil || found || got != "missing" {
+		t.Errorf("Not found failed: got=%q found=%v err=%v", got, found, err)
+	}
+}

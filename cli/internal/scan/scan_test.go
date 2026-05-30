@@ -110,9 +110,12 @@ func TestDedupeAgainstFiltersByRemoteSlugs(t *testing.T) {
 		{Slug: "gamma"},
 	}
 	remote := map[string]struct{}{"beta": {}}
-	out := DedupeAgainst(local, remote)
-	if len(out) != 2 || out[0].Slug != "alpha" || out[1].Slug != "gamma" {
-		t.Fatalf("dedupe wrong: %+v", out)
+	missing, mismatches := DedupeAgainst(local, remote)
+	if len(missing) != 2 || missing[0].Slug != "alpha" || missing[1].Slug != "gamma" {
+		t.Fatalf("dedupe wrong: %+v", missing)
+	}
+	if len(mismatches) != 0 {
+		t.Fatalf("expected 0 mismatches, got %d", len(mismatches))
 	}
 }
 
@@ -132,9 +135,12 @@ func TestDedupeAgainstNormalizesSeparatorsAndCase(t *testing.T) {
 		"simplify-swarm": {},
 		"Other-Skill":    {},
 	}
-	out := DedupeAgainst(local, remote)
-	if len(out) != 1 || out[0].Slug != "code_review" {
-		t.Fatalf("expected only code_review missing, got %+v", out)
+	missing, mismatches := DedupeAgainst(local, remote)
+	if len(missing) != 1 || missing[0].Slug != "code_review" {
+		t.Fatalf("expected only code_review missing, got %+v", missing)
+	}
+	if len(mismatches) != 1 || mismatches[0].Remote != "simplify-swarm" {
+		t.Fatalf("expected 1 mismatch (simplify-swarm), got %+v", mismatches)
 	}
 }
 
