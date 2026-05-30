@@ -15,6 +15,7 @@ from skills_mcp.github_api import (
 	_score_skill,
 	get_skill_md,
 	list_skill_folders,
+	normalize_for_match,
 	repo_has_skills,
 	search_skills,
 	slugify,
@@ -28,6 +29,18 @@ def test_slugify_normalizes() -> None:
 	assert slugify("CamelCase-mixed_123") == "camelcase_mixed_123"
 	# Falls back to "skill" when input would normalize to empty.
 	assert slugify("!!!") == "skill"
+
+
+def test_normalize_for_match_strips_separators_and_case() -> None:
+	# Separator- and case-only variants of one skill collapse to one key.
+	assert normalize_for_match("simplify-swarm") == "simplifyswarm"
+	assert normalize_for_match("simplify_swarm") == "simplifyswarm"
+	assert normalize_for_match("Simplify Swarm") == "simplifyswarm"
+	assert normalize_for_match("AGP-9 Upgrade") == "agp9upgrade"
+	# The property the sync dedupe relies on, mirrored from the Go CLI.
+	assert normalize_for_match("simplify-swarm") == normalize_for_match("simplify_swarm")
+	# Distinct from slugify, which preserves separators as underscores.
+	assert slugify("simplify-swarm") == "simplify_swarm"
 
 
 async def test_list_skill_folders_returns_summaries(monkeypatch: pytest.MonkeyPatch) -> None:

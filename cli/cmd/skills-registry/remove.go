@@ -227,8 +227,8 @@ func removeFromCache(slug string) bool {
 
 // removeFromDotFolders sweeps every agent dot-folder (~/.claude/skills,
 // .agents/skills under cwd, etc.) and removes any direct child whose
-// name matches the slug — literally or via Slugify so hyphenated folder
-// names ("agp-9-upgrade") match canonical slugs ("agp_9_upgrade").
+// name matches the slug after NormalizeForMatch, so separator- or
+// case-only differences ("agp-9-upgrade" vs "agp_9_upgrade") still match.
 //
 // Symlinks are removed without following (os.RemoveAll unlinks the
 // symlink itself). Real directories are removed recursively. Returns
@@ -263,18 +263,21 @@ func removeFromDotFoldersAt(slug, home, cwd string) []string {
 }
 
 // matchSlugChildren returns every direct child of `parent` whose name
-// matches `slug` literally or via Slugify. Returns an empty slice when
-// parent doesn't exist or is unreadable — both are normal in a fresh
-// install where most agent dot-folders are absent.
+// matches `slug` under NormalizeForMatch (lowercase + strip non-alphanumerics),
+// so a folder differing from the canonical slug only by separators or case
+// still matches. Returns an empty slice when parent doesn't exist or is
+// unreadable — both are normal in a fresh install where most agent
+// dot-folders are absent.
 func matchSlugChildren(parent, slug string) []string {
 	entries, err := os.ReadDir(parent)
 	if err != nil {
 		return nil
 	}
 	var out []string
+	want := scan.NormalizeForMatch(slug)
 	for _, e := range entries {
 		name := e.Name()
-		if name == slug || scan.Slugify(name) == slug {
+		if scan.NormalizeForMatch(name) == want {
 			out = append(out, filepath.Join(parent, name))
 		}
 	}

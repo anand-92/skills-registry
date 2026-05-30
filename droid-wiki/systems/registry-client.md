@@ -16,6 +16,8 @@ Desktop MCP clients (Claude Desktop, Cursor, VS Code) spawn the MCP server in a 
 
 Slugs are the registry's canonical identifier for a skill. Both implementations normalize a display name with the same regex (`[^a-z0-9]+` → `_`), trim leading and trailing underscores, and fall back to `"skill"` for an empty result. Python: `registry_api.slugify`. Go: `scan.Slugify` (in `cli/internal/scan/scan.go`). The function is identical in both languages so a skill named `"AGP-9 Upgrade"` always slugifies to `agp_9_upgrade` regardless of which side did the normalization.
 
+`Slugify` derives the *stored* slug. *Comparing* two identifiers ("is this dot-folder already in the registry?") goes through a separate normalizer — Go `scan.NormalizeForMatch`, Python `github_api.normalize_for_match` — which lowercases and **strips** every non-alphanumeric character (rather than collapsing runs to `_`). So `simplify-swarm`, `simplify_swarm`, and `Simplify Swarm` all compare equal. Both sides of a comparison are normalized, which is what lets `sync` recognize a local `simplify_swarm` folder as already published even when the registry stored it as `simplify-swarm`.
+
 ## Reads: `list_skills` and `download_skill`
 
 `list_skills` returns one `SkillSummary` (Python) / `Summary` (Go) per top-level folder. The implementation calls `GET /repos/{r}/contents/` to enumerate folders, then for each folder fetches `<slug>/SKILL.md` and parses its frontmatter for `name` and `description`. Hidden folders (leading `.`) and a small skip-list (`node_modules`, `__pycache__`) are filtered. The result is sorted by slug for stable output.
