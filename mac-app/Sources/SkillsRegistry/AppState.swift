@@ -217,12 +217,24 @@ final class AppState: ObservableObject {
         return try await api.getSkill(repo, slug: slug, branch: branch)
     }
 
+    /// Contents of a single supporting file (path relative to `<slug>/`).
+    func fetchFile(slug: String, path: String) async throws -> String {
+        if isDemo { return Self.demoFile(slug: slug, path: path) }
+        guard let api, let repo else { throw GitHubError(status: 0, message: "Not ready", endpoint: "") }
+        return try await api.fileContent(repo, path: "\(slug)/\(path)", branch: branch)
+    }
+
     func remove(_ slug: String) async {
         guard let api, let repo else { return }
         do {
             _ = try await api.delete(repo, slug: slug, message: "remove: \(slug)", branch: branch)
+            // Drop it locally right away — GitHub's tree listing is eventually
+            // consistent just after the ref update, so the re-list below can
+            // still return the slug. Re-apply the removal afterward to be sure.
+            skills.removeAll { $0.slug == slug }
             showToast("Removed \(slug)", .ok)
             await refreshSkills()
+            skills.removeAll { $0.slug == slug }
         } catch {
             showToast("Remove failed: \(error.localizedDescription)", .error)
         }
@@ -241,6 +253,10 @@ final class AppState: ObservableObject {
         let folderName = (folder as NSString).lastPathComponent
         let (name, _) = Frontmatter.parseSummary(text, slug: folderName)
         let slug = slugify(name.isEmpty ? folderName : name)
+        guard !skills.contains(where: { $0.slug == slug }) else {
+            showToast("Skill \(slug) already exists in the registry. Remove it first to republish.", .error)
+            return
+        }
         do {
             let files = try Scan.filesForUpload(slug: slug, folder: folder)
             // filesForUpload prefixes with "<slug>/"; publish wants paths
@@ -270,17 +286,27 @@ final class AppState: ObservableObject {
 
     func importSkills(_ locals: [LocalSkill], progress: @escaping @Sendable (Int, Int) -> Void) async {
         guard let api, let repo else { return }
+        // Defensive: never overwrite a slug already in the registry. The Import
+        // screen pre-filters these, but guard the write path directly too.
+        let existing = Set(skills.map(\.slug))
+        let fresh = locals.filter { !existing.contains($0.slug) }
+        let skipped = locals.count - fresh.count
+        guard !fresh.isEmpty else {
+            showToast(skipped > 0 ? "All selected skills already exist in the registry." : "Nothing to import.", .info)
+            return
+        }
         do {
             var files: [String: Data] = [:]
-            for sk in locals {
+            for sk in fresh {
                 let f = try Scan.filesForUpload(slug: sk.slug, folder: sk.folder)
                 files.merge(f) { a, _ in a }
             }
             guard !files.isEmpty else { showToast("Nothing to import.", .info); return }
             _ = try await api.bulkPush(repo, files: files,
-                                       message: "import: \(locals.count) skill(s)",
+                                       message: "import: \(fresh.count) skill(s)",
                                        branch: branch, progress: progress)
-            showToast("Imported \(locals.count) skill(s)", .ok)
+            let base = "Imported \(fresh.count) skill(s)"
+            showToast(skipped > 0 ? "\(base); skipped \(skipped) already in registry" : base, .ok)
             await refreshSkills()
         } catch {
             showToast("Import failed: \(error.localizedDescription)", .error)

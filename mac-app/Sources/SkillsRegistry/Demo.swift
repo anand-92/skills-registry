@@ -83,4 +83,19 @@ extension AppState {
             files: ["SKILL.md", "references/checklist.md", "scripts/run.sh"]
         )
     }
+
+    static func demoFile(slug: String, path: String) -> String {
+        if path.hasSuffix(".sh") {
+            return "#!/usr/bin/env bash\nset -euo pipefail\n\n# Demo support script for \(slug)\necho \"running \(slug)\"\n"
+        }
+        return """
+        # \(path)
+
+        Demo contents for `\(path)` in **\(slug)**. Real registries serve the
+        actual file from GitHub.
+
+        - bullet one
+        - bullet two
+        """
+    }
 }

@@ -19,6 +19,12 @@ struct BrowseView: View {
             Divider().overlay(Brand.border)
             detailColumn
         }
+        .onChange(of: state.skills) { _, skills in
+            // Reset the detail pane if the selected skill is gone (e.g. removed).
+            if let s = selected, !skills.contains(where: { $0.slug == s }) {
+                selected = nil
+            }
+        }
     }
 
     private var listColumn: some View {

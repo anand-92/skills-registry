@@ -84,9 +84,7 @@ struct HomeView: View {
 
     private var accountFooter: some View {
         HStack(spacing: 10) {
-            Circle().fill(Brand.surfaceRaised)
-                .frame(width: 28, height: 28)
-                .overlay(Text(initials).font(.system(size: 11, weight: .bold)).foregroundStyle(Brand.accent))
+            avatar
             VStack(alignment: .leading, spacing: 1) {
                 Text(state.identity?.displayName ?? "—").font(.system(size: 12, weight: .medium)).foregroundStyle(Brand.fg)
                 Text("@\(state.identity?.login ?? "")").font(Brand.monoSized(10)).foregroundStyle(Brand.meta)
@@ -100,8 +98,33 @@ struct HomeView: View {
             } label: {
                 Image(systemName: "ellipsis").font(.system(size: 13)).foregroundStyle(Brand.muted)
             }
-            .menuStyle(.borderlessButton).frame(width: 22)
+            .menuStyle(.borderlessButton).menuIndicator(.hidden).frame(width: 22)
         }
+    }
+
+    /// The signed-in user's GitHub avatar, falling back to their initial while
+    /// loading or if the image can't be fetched.
+    private var avatar: some View {
+        Group {
+            if let url = state.identity?.avatarURL {
+                AsyncImage(url: url) { phase in
+                    if let image = phase.image {
+                        image.resizable().scaledToFill()
+                    } else {
+                        avatarFallback
+                    }
+                }
+            } else {
+                avatarFallback
+            }
+        }
+        .frame(width: 28, height: 28)
+        .clipShape(Circle())
+    }
+
+    private var avatarFallback: some View {
+        Circle().fill(Brand.surfaceRaised)
+            .overlay(Text(initials).font(.system(size: 11, weight: .bold)).foregroundStyle(Brand.accent))
     }
 
     private var initials: String {

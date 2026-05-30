@@ -14,8 +14,11 @@ enum Brand {
     static let meta = Color(hex: 0xF5F3EE).opacity(0.40)
     static let border = Color(hex: 0x1F1F1F)
     static let borderSoft = Color(hex: 0x141414)
-    static let accent = Color(hex: 0xFF4D8D)
-    static let accentSoft = Color(hex: 0xFF9EC2)
+    /// The accent threads through buttons, links, and highlights. It's the one
+    /// palette token the user can re-theme (see `AccentTheme` / `ThemeManager`),
+    /// so it reads from the active selection rather than being a fixed `let`.
+    static var accent: Color { AppTheme.current.accent }
+    static var accentSoft: Color { AppTheme.current.accentSoft }
     static let success = Color(hex: 0x16A34A)
     static let warn = Color(hex: 0xEAB308)
     static let danger = Color(hex: 0xDC2626)
@@ -23,6 +26,74 @@ enum Brand {
     static let mono = Font.system(.body, design: .monospaced)
     static func monoSized(_ size: CGFloat, weight: Font.Weight = .regular) -> Font {
         .system(size: size, weight: weight, design: .monospaced)
+    }
+}
+
+// MARK: - Accent theming
+
+/// Selectable accent palettes layered over the fixed dark surfaces. A true
+/// light theme would clash with the hardcoded near-black surfaces, so the user
+/// re-themes the accent only.
+enum AccentTheme: String, CaseIterable, Identifiable {
+    case pink, blue, green, amber, violet
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .pink: return "Pink"
+        case .blue: return "Blue"
+        case .green: return "Green"
+        case .amber: return "Amber"
+        case .violet: return "Violet"
+        }
+    }
+
+    var accent: Color {
+        switch self {
+        case .pink: return Color(hex: 0xFF4D8D)
+        case .blue: return Color(hex: 0x3B82F6)
+        case .green: return Color(hex: 0x22C55E)
+        case .amber: return Color(hex: 0xF59E0B)
+        case .violet: return Color(hex: 0x8B5CF6)
+        }
+    }
+
+    var accentSoft: Color {
+        switch self {
+        case .pink: return Color(hex: 0xFF9EC2)
+        case .blue: return Color(hex: 0x93C5FD)
+        case .green: return Color(hex: 0x86EFAC)
+        case .amber: return Color(hex: 0xFCD34D)
+        case .violet: return Color(hex: 0xC4B5FD)
+        }
+    }
+}
+
+/// Holds the live accent so `Brand.accent` can read it synchronously from
+/// anywhere. Mutated only by `ThemeManager`.
+enum AppTheme {
+    static var current: AccentTheme = .pink
+}
+
+/// Persists the user's accent choice and republishes on change so SwiftUI
+/// rebuilds the palette-dependent view tree.
+@MainActor
+final class ThemeManager: ObservableObject {
+    private static let key = "accentTheme"
+
+    @Published var accent: AccentTheme {
+        didSet {
+            AppTheme.current = accent
+            UserDefaults.standard.set(accent.rawValue, forKey: Self.key)
+        }
+    }
+
+    init() {
+        let raw = UserDefaults.standard.string(forKey: Self.key)
+        let theme = raw.flatMap(AccentTheme.init(rawValue:)) ?? .pink
+        accent = theme
+        AppTheme.current = theme
     }
 }
 

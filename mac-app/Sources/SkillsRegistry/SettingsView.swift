@@ -4,6 +4,7 @@ import SkillsRegistryCore
 
 struct SettingsView: View {
     @EnvironmentObject var state: AppState
+    @EnvironmentObject var theme: ThemeManager
     @State private var installing = false
 
     var body: some View {
@@ -13,6 +14,7 @@ struct SettingsView: View {
                     Eyebrow(text: "Settings")
                     Text("Connect your agents").font(.system(size: 22, weight: .semibold)).foregroundStyle(Brand.fg)
                 }
+                appearanceCard
                 cliCard
                 mcpCard
                 registryCard
@@ -23,6 +25,34 @@ struct SettingsView: View {
         }
         .background(Brand.bg)
         .task { await state.refreshCLIStatus() }
+    }
+
+    private var appearanceCard: some View {
+        Card {
+            VStack(alignment: .leading, spacing: 14) {
+                Label("Appearance", systemImage: "paintpalette").font(.system(size: 15, weight: .semibold)).foregroundStyle(Brand.fg)
+                Text("Pick an accent color. Surfaces stay dark; the accent threads through buttons, links, and highlights.")
+                    .font(.system(size: 13)).foregroundStyle(Brand.muted).fixedSize(horizontal: false, vertical: true)
+                HStack(spacing: 14) {
+                    ForEach(AccentTheme.allCases) { swatch($0) }
+                    Spacer()
+                }
+            }
+        }
+    }
+
+    private func swatch(_ t: AccentTheme) -> some View {
+        let isSelected = theme.accent == t
+        return Button { theme.accent = t } label: {
+            VStack(spacing: 6) {
+                Circle().fill(t.accent).frame(width: 26, height: 26)
+                    .overlay(Circle().strokeBorder(Brand.fg, lineWidth: isSelected ? 2 : 0))
+                    .overlay(Circle().strokeBorder(Brand.border, lineWidth: 1))
+                Text(t.label).font(Brand.monoSized(10)).foregroundStyle(isSelected ? Brand.fg : Brand.meta)
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("theme-\(t.rawValue)")
     }
 
     private var cliCard: some View {

@@ -2,8 +2,10 @@ import SwiftUI
 import MarkdownUI
 
 extension MarkdownUI.Theme {
-    /// Dark, brand-matched markdown theme for rendering SKILL.md.
-    static let brand = MarkdownUI.Theme()
+    /// Dark, brand-matched markdown theme for rendering SKILL.md. Computed so
+    /// link/code accents follow the active `AccentTheme`.
+    static var brand: MarkdownUI.Theme {
+        MarkdownUI.Theme()
         .text {
             ForegroundColor(Brand.fg2)
             FontSize(15)
@@ -94,4 +96,5 @@ extension MarkdownUI.Theme {
         .thematicBreak {
             Divider().overlay(Brand.border).markdownMargin(top: 20, bottom: 20)
         }
+    }
 }

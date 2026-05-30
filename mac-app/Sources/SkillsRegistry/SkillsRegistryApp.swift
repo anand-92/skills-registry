@@ -4,6 +4,7 @@ import SkillsRegistryCore
 @main
 struct SkillsRegistryApp: App {
     @StateObject private var state: AppState
+    @StateObject private var theme = ThemeManager()
 
     init() {
         let demo = ProcessInfo.processInfo.arguments.contains("--demo")
@@ -15,6 +16,7 @@ struct SkillsRegistryApp: App {
         WindowGroup {
             RootView()
                 .environmentObject(state)
+                .environmentObject(theme)
                 .frame(minWidth: 940, minHeight: 620)
                 .background(Brand.bg)
                 .preferredColorScheme(.dark)
@@ -34,20 +36,15 @@ struct SkillsRegistryApp: App {
 /// Top-level router: switches on the auth/setup phase and overlays toasts.
 struct RootView: View {
     @EnvironmentObject var state: AppState
+    @EnvironmentObject var theme: ThemeManager
 
     var body: some View {
         ZStack {
             Brand.bg.ignoresSafeArea()
-            switch state.phase {
-            case .loading:
-                LoadingView()
-            case .signedOut:
-                LoginView()
-            case .setup:
-                SetupView()
-            case .ready:
-                HomeView()
-            }
+            phaseContent
+                // Rebuild the palette-dependent tree when the accent changes,
+                // without re-running the root `bootstrap` task.
+                .id(theme.accent)
         }
         .toastOverlay(state.toast)
         .sheet(isPresented: Binding(
@@ -59,6 +56,19 @@ struct RootView: View {
         }
         .tint(Brand.accent)
         .foregroundStyle(Brand.fg)
+    }
+
+    @ViewBuilder private var phaseContent: some View {
+        switch state.phase {
+        case .loading:
+            LoadingView()
+        case .signedOut:
+            LoginView()
+        case .setup:
+            SetupView()
+        case .ready:
+            HomeView()
+        }
     }
 }
 

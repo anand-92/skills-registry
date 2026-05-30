@@ -119,6 +119,22 @@ extension GitHubAPI {
         return SkillDetail(slug: slug, name: name, description: desc, markdown: markdown, files: files)
     }
 
+    /// Fetch the UTF-8 contents of a single repo-relative file path (e.g.
+    /// "<slug>/scripts/run.sh"). Uses the contents API so callers don't need
+    /// the blob SHA in hand. Empty string for binary / unreadable content.
+    public func fileContent(_ repo: RepoRef, path: String, branch: String) async throws -> String {
+        let encoded = path.split(separator: "/", omittingEmptySubsequences: false)
+            .map { $0.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? String($0) }
+            .joined(separator: "/")
+        let resp = try await getDecoded("repos/\(repo.fullName)/contents/\(encoded)?ref=\(branch)",
+                                        as: GHBlobResp.self)
+        guard resp.encoding == "base64" else { return "" }
+        let cleaned = resp.content.replacingOccurrences(of: "\n", with: "")
+        guard let data = Data(base64Encoded: cleaned),
+              let text = String(data: data, encoding: .utf8) else { return "" }
+        return text
+    }
+
     // MARK: - blob helpers
 
     func blobUTF8(_ repo: RepoRef, sha: String) async throws -> String? {

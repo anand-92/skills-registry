@@ -38,66 +38,56 @@ The hard part — **real GitHub auth** — is done and tested live:
 
 ---
 
-## Known bugs to fix (found during live testing)
+## Known bugs — all 6 FIXED (build + 15/15 tests green; live UI re-verify pending)
 
-Priority order. File pointers included.
+Priority order. Each fix below is implemented and compiles clean; they're
+UI/app-layer only and don't touch the cross-language contract. Live (running
+app) re-verification of the visual results is still worth a pass.
 
-1. **No profile picture.** The sidebar account footer renders the user's
-   initial in a circle instead of their GitHub avatar. `Identity.avatarURL` is
-   **already populated** by `GitHubReads.currentUser()`, so this is UI-only.
-   - Fix in `Sources/SkillsRegistry/HomeView.swift` → `accountFooter` (~line 85):
-     replace the `Circle().overlay(Text(initials))` with an `AsyncImage(url:
-     state.identity?.avatarURL)` that falls back to the initial while loading /
-     on failure.
+1. ✅ **Profile picture.** `accountFooter` now renders an `AsyncImage(url:
+   state.identity?.avatarURL)` (clipped to a circle, `.scaledToFill`) that falls
+   back to the initial while loading / on failure.
+   `Sources/SkillsRegistry/HomeView.swift` → `avatar` / `avatarFallback`.
 
-2. **Publishing/adding an existing skill silently "succeeds".** Re-adding a
-   slug that already exists in the registry shows "Published/Added" instead of
-   failing with "skill already exists". Writes currently overwrite.
-   - `Sources/SkillsRegistry/AppState.swift` → `publishFolder(_:)` and
-     `importSkills(_:)`. Before writing, check the slug against the loaded
-     `skills` (or do a remote existence check) and surface an error/skip.
-     `scanLocal()` already filters existing slugs for the Import screen, but the
-     single **Publish** path does not guard. Decide the contract (hard-fail vs
-     "update existing") and make the toast honest.
+2. ✅ **Existing-slug writes no longer silently overwrite.** `publishFolder(_:)`
+   hard-fails with `"Skill <slug> already exists in the registry. Remove it
+   first to republish."` when the slug is already loaded; `importSkills(_:)`
+   filters out existing slugs defensively and the toast is honest about how many
+   were imported vs. skipped. `Sources/SkillsRegistry/AppState.swift`.
 
-3. **Account "⋯" menu shows an overlapping down-chevron.** The borderless
-   `Menu` adds a disclosure indicator that overlaps the `ellipsis` glyph.
-   - `Sources/SkillsRegistry/HomeView.swift` → `accountFooter` Menu (~line 95):
-     add `.menuIndicator(.hidden)` (and/or drop `.menuStyle(.borderlessButton)`)
-     so only the `ellipsis` shows.
+3. ✅ **Account "⋯" menu chevron.** Added `.menuIndicator(.hidden)` to the
+   account `Menu` so only the `ellipsis` shows.
+   `Sources/SkillsRegistry/HomeView.swift` → `accountFooter`.
 
-4. **Add a theme picker in Settings.** Feature request — let the user switch
-   theme/appearance.
-   - `Sources/SkillsRegistry/SettingsView.swift` for the control;
-     `Sources/SkillsRegistry/Theme.swift` (`Brand`) currently hardcodes the
-     palette — would need to become selectable (e.g. an `@AppStorage` theme enum
-     driving `Brand`), or at minimum a light/dark/system `preferredColorScheme`
-     toggle.
+4. ✅ **Theme picker (accent colors).** Settings now has an "Appearance" card
+   with five accent swatches (pink/blue/green/amber/violet). Surfaces stay dark
+   (a true light theme would clash with the hardcoded near-black palette).
+   - `Theme.swift`: `AccentTheme` enum, `AppTheme.current` holder, `Brand.accent`
+     / `Brand.accentSoft` are now computed, and `@MainActor ThemeManager:
+     ObservableObject` persists the choice to `UserDefaults`.
+   - `MarkdownTheme.swift`: `.brand` is now a computed `static var` so markdown
+     link/code accents track the theme.
+   - `SkillsRegistryApp.swift`: `ThemeManager` injected as a `@StateObject`;
+     `RootView` keys its phase content with `.id(theme.accent)` so the palette
+     repaints on change without re-running `bootstrap`.
+   - `SettingsView.swift`: `appearanceCard` + `swatch(_:)`.
 
-5. **Multi-file skill preview is not browsable.** The detail view lists all
-   files (SKILL.md, `references/…`, `scripts/…`) in the FILES rail but only
-   SKILL.md is ever rendered — the other rows aren't clickable.
-   - `Sources/SkillsRegistry/SkillDetailView.swift` → `fileRail(_:)` (~line 95):
-     make each row a `Button` with selection state.
-   - `SkillDetail` (`Sources/SkillsRegistryCore/Models.swift`) carries `files:
-     [String]` (paths) but **not their contents**. Add a fetch for an arbitrary
-     file path (extend `GitHubReads`, e.g. a `getFile(repo, path, branch)` via
-     the contents/blobs API) and render `.md` through MarkdownUI, other types as
-     monospaced text.
+5. ✅ **Multi-file skill preview is browsable.** FILES-rail rows are now
+   `Button`s with selection highlight; SKILL.md renders as before, other `.md`
+   files via MarkdownUI, everything else as monospaced text.
+   - `Sources/SkillsRegistryCore/GitHubReads.swift`: new
+     `fileContent(_ repo:path:branch:)` (contents API, base64-decoded).
+   - `AppState.fetchFile(slug:path:)` (demo-aware) + `Demo.demoFile(...)`.
+   - `SkillDetailView.swift`: `selectedFile` + aux loading/text/error state,
+     `fileViewer(_:)`, `fileRow(_:)`, `selectFile(_:)`.
 
-6. **Deleting a skill doesn't update the UI.** After a successful delete the
-   list/detail still show the removed skill.
-   - `Sources/SkillsRegistry/AppState.swift` → `remove(_:)` does call
-     `refreshSkills()`, but (a) `BrowseView`'s `@State selected` still points at
-     the just-deleted slug so the detail pane keeps rendering it, and (b)
-     GitHub's contents listing can be **eventually consistent** immediately
-     after the ref update, so the re-list may still include the slug.
-   - Fix in `Sources/SkillsRegistry/AppState.swift` + `BrowseView.swift`:
-     optimistically drop the slug from `state.skills` right after the delete
-     succeeds (don't rely solely on the re-list), and clear `selected` (→ nil)
-     when the displayed skill is removed so the detail pane resets.
+6. ✅ **Delete updates the UI.** `remove(_:)` optimistically drops the slug from
+   `state.skills` before *and* after `refreshSkills()` (defeating GitHub's
+   eventual-consistency re-list); `BrowseView` clears `selected` via
+   `.onChange(of: state.skills)` when the displayed skill is gone.
+   `Sources/SkillsRegistry/AppState.swift` + `BrowseView.swift`.
 
-> These are polish/feature bugs — none block the core auth + browse + write
+> These were polish/feature bugs — none block the core auth + browse + write
 > paths, which are verified.
 
 ---

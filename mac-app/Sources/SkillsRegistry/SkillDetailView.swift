@@ -12,6 +12,13 @@ struct SkillDetailView: View {
     @State private var error: String?
     @State private var confirmRemove = false
 
+    // Multi-file browsing. SKILL.md renders from `detail.markdown`; other files
+    // are fetched lazily into `auxText`.
+    @State private var selectedFile = "SKILL.md"
+    @State private var auxText: String?
+    @State private var auxLoading = false
+    @State private var auxError: String?
+
     var body: some View {
         VStack(spacing: 0) {
             header
@@ -75,19 +82,46 @@ struct SkillDetailView: View {
             EmptyState(icon: "exclamationmark.triangle", title: "Couldn't load", subtitle: error)
         } else if let d = detail {
             HStack(spacing: 0) {
-                ScrollView {
-                    // Render the body only — the frontmatter's name/description
-                    // already appear in the header. "Copy" still copies the raw
-                    // file (frontmatter included).
-                    Markdown(Frontmatter.body(d.markdown))
+                fileViewer(d)
+                if d.files.count > 1 {
+                    Divider().overlay(Brand.border)
+                    fileRail(d.files)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder private func fileViewer(_ d: SkillDetail) -> some View {
+        if selectedFile == "SKILL.md" {
+            ScrollView {
+                // Render the body only — the frontmatter's name/description
+                // already appear in the header. "Copy" still copies the raw
+                // file (frontmatter included).
+                Markdown(Frontmatter.body(d.markdown))
+                    .markdownTheme(.brand)
+                    .textSelection(.enabled)
+                    .padding(24)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        } else if auxLoading {
+            VStack { Spacer(); ProgressView().tint(Brand.accent); Spacer() }
+                .frame(maxWidth: .infinity)
+        } else if let auxError {
+            EmptyState(icon: "exclamationmark.triangle", title: "Couldn't load file", subtitle: auxError)
+        } else if let auxText {
+            ScrollView {
+                if selectedFile.hasSuffix(".md") {
+                    Markdown(auxText)
                         .markdownTheme(.brand)
                         .textSelection(.enabled)
                         .padding(24)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                if d.files.count > 1 {
-                    Divider().overlay(Brand.border)
-                    fileRail(d.files)
+                } else {
+                    Text(auxText)
+                        .font(Brand.monoSized(12)).foregroundStyle(Brand.fg2)
+                        .textSelection(.enabled)
+                        .padding(24)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
         }
@@ -100,21 +134,47 @@ struct SkillDetailView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 2) {
                     ForEach(files, id: \.self) { f in
-                        HStack(spacing: 8) {
-                            Image(systemName: icon(for: f)).font(.system(size: 11))
-                                .foregroundStyle(f == "SKILL.md" ? Brand.accent : Brand.muted)
-                                .frame(width: 14)
-                            Text(f).font(Brand.monoSized(11)).foregroundStyle(Brand.fg2)
-                                .lineLimit(1).truncationMode(.middle)
-                        }
-                        .padding(.horizontal, 14).padding(.vertical, 5)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                        fileRow(f)
                     }
                 }
+                .padding(.horizontal, 6)
             }
         }
         .frame(width: 210)
         .background(Brand.surface)
+    }
+
+    private func fileRow(_ f: String) -> some View {
+        Button { selectFile(f) } label: {
+            HStack(spacing: 8) {
+                Image(systemName: icon(for: f)).font(.system(size: 11))
+                    .foregroundStyle(f == selectedFile ? Brand.accent : Brand.muted)
+                    .frame(width: 14)
+                Text(f).font(Brand.monoSized(11)).foregroundStyle(f == selectedFile ? Brand.fg : Brand.fg2)
+                    .lineLimit(1).truncationMode(.middle)
+                Spacer()
+            }
+            .padding(.horizontal, 8).padding(.vertical, 5)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(f == selectedFile ? Brand.surfaceRaised : Color.clear)
+            .clipShape(RoundedRectangle(cornerRadius: 5))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("file-\(f)")
+    }
+
+    private func selectFile(_ f: String) {
+        guard f != selectedFile else { return }
+        selectedFile = f
+        auxText = nil; auxError = nil
+        guard f != "SKILL.md" else { return }
+        auxLoading = true
+        Task {
+            do { auxText = try await state.fetchFile(slug: slug, path: f) }
+            catch { auxError = error.localizedDescription }
+            auxLoading = false
+        }
     }
 
     private func icon(for file: String) -> String {
