@@ -43,7 +43,7 @@ jobs:
         working-directory: mac-app
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
@@ -65,7 +65,7 @@ jobs:
           echo "Releasing macapp-v${VERSION}"
 
       - name: Import codesigning certificate
-        uses: apple-actions/import-codesign-certs@v3
+        uses: apple-actions/import-codesign-certs@v7
         with:
           p12-file-base64: ${{ secrets.APPLE_DEVELOPER_CERTIFICATE_P12_BASE64 }}
           p12-password: ${{ secrets.APPLE_DEVELOPER_CERTIFICATE_PASSWORD }}
@@ -163,7 +163,7 @@ jobs:
           git push origin main
 
       - name: Create GitHub release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: macapp-v${{ steps.version.outputs.version }}
           name: Skills Registry (macOS) ${{ steps.version.outputs.version }}
