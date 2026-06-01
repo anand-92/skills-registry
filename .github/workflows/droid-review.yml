@@ -2,7 +2,7 @@ name: Droid Auto Review
 
 on:
   pull_request:
-    types: [opened, ready_for_review, reopened]
+    types: [labeled]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -10,7 +10,7 @@ concurrency:
 
 jobs:
   droid-review:
-    if: github.event.pull_request.draft == false
+    if: github.event.label.name == 'factory-review' && github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     permissions:
       contents: write
