@@ -165,22 +165,6 @@ func loadRegistryForRemove() (config.Config, *registry.Client, error) {
 	return cfg, client, nil
 }
 
-// assertRemoteSlugExists is the source-of-truth gate for the exit-1
-// "not found" branch. Probing via Slugs() rather than letting Delete
-// surface ErrSlugNotFound keeps the confirmation prompt from spinning
-// up only to be torn down moments later, and gives the user a single
-// clean error message instead of a generic API failure.
-func assertRemoteSlugExists(ctx context.Context, client *registry.Client, slug, repo string) error {
-	slugs, err := client.Slugs(ctx)
-	if err != nil {
-		return fmt.Errorf("list registry slugs in %s: %w", repo, err)
-	}
-	if _, ok := slugs[slug]; !ok {
-		return fmt.Errorf("slug %q not found in registry %s", slug, repo)
-	}
-	return nil
-}
-
 // confirmRemove renders a yes/no prompt before the destructive action.
 // "Cancel" is the default highlight (cursor starts on Yes; the user
 // must press enter to commit) — Choice doesn't offer per-row default
