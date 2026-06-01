@@ -120,9 +120,13 @@ func runRemove(ctx context.Context, slug string, yes, quietMode bool) (*removeRe
 	if err != nil {
 		return nil, err
 	}
-	canonSlug := scan.Slugify(slug)
-	if err := assertRemoteSlugExists(ctx, client, canonSlug, cfg.Repo); err != nil {
+	// Resolve the actual slug from the registry (handles separator/case drift).
+	canonSlug, found, err := client.Resolve(ctx, scan.Slugify(slug))
+	if err != nil {
 		return nil, err
+	}
+	if !found {
+		return nil, fmt.Errorf("slug %q not found in registry %s", slug, cfg.Repo)
 	}
 	if !yes && !quietMode {
 		ok, err := confirmRemove(canonSlug, cfg.Repo)
@@ -159,22 +163,6 @@ func loadRegistryForRemove() (config.Config, *registry.Client, error) {
 		return config.Config{}, nil, err
 	}
 	return cfg, client, nil
-}
-
-// assertRemoteSlugExists is the source-of-truth gate for the exit-1
-// "not found" branch. Probing via Slugs() rather than letting Delete
-// surface ErrSlugNotFound keeps the confirmation prompt from spinning
-// up only to be torn down moments later, and gives the user a single
-// clean error message instead of a generic API failure.
-func assertRemoteSlugExists(ctx context.Context, client *registry.Client, slug, repo string) error {
-	slugs, err := client.Slugs(ctx)
-	if err != nil {
-		return fmt.Errorf("list registry slugs in %s: %w", repo, err)
-	}
-	if _, ok := slugs[slug]; !ok {
-		return fmt.Errorf("slug %q not found in registry %s", slug, repo)
-	}
-	return nil
 }
 
 // confirmRemove renders a yes/no prompt before the destructive action.
@@ -227,8 +215,8 @@ func removeFromCache(slug string) bool {
 
 // removeFromDotFolders sweeps every agent dot-folder (~/.claude/skills,
 // .agents/skills under cwd, etc.) and removes any direct child whose
-// name matches the slug — literally or via Slugify so hyphenated folder
-// names ("agp-9-upgrade") match canonical slugs ("agp_9_upgrade").
+// name matches the slug after NormalizeForMatch, so separator- or
+// case-only differences ("agp-9-upgrade" vs "agp_9_upgrade") still match.
 //
 // Symlinks are removed without following (os.RemoveAll unlinks the
 // symlink itself). Real directories are removed recursively. Returns
@@ -263,18 +251,21 @@ func removeFromDotFoldersAt(slug, home, cwd string) []string {
 }
 
 // matchSlugChildren returns every direct child of `parent` whose name
-// matches `slug` literally or via Slugify. Returns an empty slice when
-// parent doesn't exist or is unreadable — both are normal in a fresh
-// install where most agent dot-folders are absent.
+// matches `slug` under NormalizeForMatch (lowercase + strip non-alphanumerics),
+// so a folder differing from the canonical slug only by separators or case
+// still matches. Returns an empty slice when parent doesn't exist or is
+// unreadable — both are normal in a fresh install where most agent
+// dot-folders are absent.
 func matchSlugChildren(parent, slug string) []string {
 	entries, err := os.ReadDir(parent)
 	if err != nil {
 		return nil
 	}
 	var out []string
+	want := scan.NormalizeForMatch(slug)
 	for _, e := range entries {
 		name := e.Name()
-		if name == slug || scan.Slugify(name) == slug {
+		if scan.NormalizeForMatch(name) == want {
 			out = append(out, filepath.Join(parent, name))
 		}
 	}

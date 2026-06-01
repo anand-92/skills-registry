@@ -102,16 +102,27 @@ func runAddJSON(ctx context.Context, source string) error {
 		jsonout.PrintError(err)
 		return err
 	}
+	missing, mismatches := scan.DedupeAgainst(skills, existing)
 	pushed := []string{}
 	skipped := []string{}
+
+	// Any skill that already exists (exactly or via normalization) is skipped.
+	// We populate the skipped slice with the local slugs so the JSON consumer
+	// knows which of their inputs were bypassed.
+	missingSet := map[string]struct{}{}
+	for _, sk := range missing {
+		missingSet[sk.Slug] = struct{}{}
+	}
+	for _, sk := range skills {
+		if _, ok := missingSet[sk.Slug]; !ok {
+			skipped = append(skipped, sk.Slug)
+		}
+	}
+
 	installed := map[string][]string{}
 	universal := universalInstallTargets()
 	safeSource := redactSourceUserInfo(source)
-	for _, sk := range skills {
-		if _, dup := existing[sk.Slug]; dup {
-			skipped = append(skipped, sk.Slug)
-			continue
-		}
+	for _, sk := range missing {
 		files := map[string][]byte{}
 		if err := walkSkillIntoFiles(sk, files); err != nil {
 			jsonout.PrintError(err)
@@ -137,6 +148,9 @@ func runAddJSON(ctx context.Context, source string) error {
 		}
 		installed[sk.Slug] = paths
 	}
+	// Note: mismatches are currently handled as simple skips in the JSON
+	// output to keep the payload compatible with the JSON-004 contract.
+	_ = mismatches
 	return jsonout.Print(addJSONResult{Pushed: pushed, Skipped: skipped, Installed: installed})
 }
 

@@ -62,6 +62,33 @@ func Slugify(name string) string {
 	return s
 }
 
+// NormalizeForMatch reduces a name or slug to a comparison key by
+// lowercasing and stripping every non-alphanumeric character. Unlike
+// Slugify — which preserves word separators as underscores so the result
+// is still a readable, filesystem-safe slug — this collapses separators
+// away entirely, so "simplify-swarm", "simplify_swarm", and
+// "Simplify Swarm" all map to the same key ("simplifyswarm").
+//
+// Use it whenever two skill identifiers are tested for "same skill"
+// (sync dedupe, dot-folder cleanup, the remove sweep, get sibling reuse).
+// Never use it to derive a stored slug or a filesystem path — Slugify owns
+// that, and a separator-free key is not a valid registry folder name.
+func NormalizeForMatch(s string) string {
+	return slugRe.ReplaceAllString(strings.ToLower(strings.TrimSpace(s)), "")
+}
+
+// normalizedMap re-keys a slug set by NormalizeForMatch so membership tests
+// ignore separator- and case-only differences between the registry's stored
+// folder names and locally-derived slugs. The value is the original slug
+// from the registry.
+func normalizedMap(slugs map[string]struct{}) map[string]string {
+	out := make(map[string]string, len(slugs))
+	for s := range slugs {
+		out[NormalizeForMatch(s)] = s
+	}
+	return out
+}
+
 // DiscoverSources returns every known skill-bearing directory under $HOME and cwd.
 func DiscoverSources(home, cwd string, extra []string, dotDirs []string) []Source {
 	want := map[string]struct{}{}
@@ -268,10 +295,12 @@ type CleanupEntry struct {
 // Rules:
 //   - Skip the literal name "skills-registry" (that's our SKILL.md install
 //     target, written by bootstrap.InstallSkillMd) and dotfiles (.DS_Store).
-//   - Match by literal name OR Slugify(name): folder names on disk often
-//     contain hyphens (e.g. "agp-9-upgrade"), but Slugify normalizes those
-//     to underscores ("agp_9_upgrade") and the registry stores skills under
-//     the slug. Direct name-equality alone would miss every hyphenated skill.
+//   - Match via NormalizeForMatch on both sides: a folder name on disk and
+//     the registry's stored slug routinely differ by separators or case
+//     (e.g. "agp-9-upgrade" on disk vs "agp_9_upgrade" in the registry, or
+//     a registry folder stored with a hyphen vs an underscore dot-folder).
+//     Normalizing both sides (lowercase + strip non-alphanumerics) keeps the
+//     match robust regardless of which convention each side happened to use.
 //   - Real directories must contain a sibling SKILL.md to be eligible; this
 //     protects against accidentally deleting unrelated content that happens
 //     to share a name with a slug.
@@ -282,6 +311,7 @@ type CleanupEntry struct {
 // same slug exists in five dot-folders, all five entries are returned. That's
 // the whole point: the previous slug-deduped cleanup left N-1 copies behind.
 func EntriesForCleanup(sources []Source, registrySlugs map[string]struct{}) []CleanupEntry {
+	registryNorm := normalizedMap(registrySlugs)
 	var entries []CleanupEntry
 	for _, src := range sources {
 		list, err := os.ReadDir(src.Path)
@@ -293,10 +323,8 @@ func EntriesForCleanup(sources []Source, registrySlugs map[string]struct{}) []Cl
 			if name == "skills-registry" || strings.HasPrefix(name, ".") {
 				continue
 			}
-			if _, ok := registrySlugs[name]; !ok {
-				if _, ok := registrySlugs[Slugify(name)]; !ok {
-					continue
-				}
+			if _, ok := registryNorm[NormalizeForMatch(name)]; !ok {
+				continue
 			}
 			full := filepath.Join(src.Path, name)
 			// e.Type() can omit ModeSymlink (or return zero) on filesystems
@@ -334,15 +362,33 @@ func EntriesForCleanup(sources []Source, registrySlugs map[string]struct{}) []Cl
 	return entries
 }
 
+// Mismatch represents a local skill that matches a registry slug via
+// NormalizeForMatch, but has a different canonical slug (separators or case).
+type Mismatch struct {
+	Local  Skill
+	Remote string // the actual slug in the registry
+}
+
 // DedupeAgainst returns skills from `local` whose slugs are NOT present in the
-// `remote` slug set. Used by `skills-registry sync` to compute the diff.
-func DedupeAgainst(local []Skill, remoteSlugs map[string]struct{}) []Skill {
-	out := make([]Skill, 0, len(local))
+// `remote` slug set (the "missing" set) and those that match via
+// NormalizeForMatch but differ by separators or case (the "mismatches" set).
+//
+// Both sides are compared via NormalizeForMatch, so a local dot-folder named
+// "simplify_swarm" is recognized as already-present when the registry stores
+// it as "simplify-swarm" (and vice versa). Without this, a separator- or
+// case-only difference between the on-disk folder and the registry's folder
+// name surfaces an already-published skill as "missing from the registry".
+func DedupeAgainst(local []Skill, remoteSlugs map[string]struct{}) (missing []Skill, mismatches []Mismatch) {
+	remote := normalizedMap(remoteSlugs)
 	for _, s := range local {
-		if _, dup := remoteSlugs[s.Slug]; dup {
+		actual, dup := remote[NormalizeForMatch(s.Slug)]
+		if !dup {
+			missing = append(missing, s)
 			continue
 		}
-		out = append(out, s)
+		if s.Slug != actual {
+			mismatches = append(mismatches, Mismatch{Local: s, Remote: actual})
+		}
 	}
-	return out
+	return missing, mismatches
 }

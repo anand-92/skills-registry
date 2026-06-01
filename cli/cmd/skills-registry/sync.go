@@ -90,9 +90,10 @@ func runSyncJSON(ctx context.Context) error {
 // the registry (the "skipped" set), and the local skills missing
 // upstream (the "would-push" set).
 type syncPlan struct {
-	client  *registry.Client
-	missing []scan.Skill
-	skipped []scan.Skill
+	client     *registry.Client
+	missing    []scan.Skill
+	skipped    []scan.Skill
+	mismatches []scan.Mismatch
 }
 
 // skippedSlugs returns the canonical slugs of every local skill that
@@ -126,7 +127,7 @@ func planSync(ctx context.Context) (syncPlan, error) {
 	if err != nil {
 		return syncPlan{}, err
 	}
-	missing := scan.DedupeAgainst(local, remote)
+	missing, mismatches := scan.DedupeAgainst(local, remote)
 	missingSet := map[string]struct{}{}
 	for _, m := range missing {
 		missingSet[m.Slug] = struct{}{}
@@ -136,12 +137,25 @@ func planSync(ctx context.Context) (syncPlan, error) {
 		if _, ok := missingSet[s.Slug]; ok {
 			continue
 		}
+		// Skip mismatches too so they don't land in the "skipped" set
+		// (which the multi-select uses to decide what to show).
+		isMismatch := false
+		for _, mm := range mismatches {
+			if mm.Local.Slug == s.Slug {
+				isMismatch = true
+				break
+			}
+		}
+		if isMismatch {
+			continue
+		}
 		skipped = append(skipped, s)
 	}
 	return syncPlan{
-		client:  client,
-		missing: missing,
-		skipped: skipped,
+		client:     client,
+		missing:    missing,
+		skipped:    skipped,
+		mismatches: mismatches,
 	}, nil
 }
 
@@ -149,6 +163,13 @@ func runSync(ctx context.Context, yes, all bool) error {
 	plan, err := planSync(ctx)
 	if err != nil {
 		return err
+	}
+	if len(plan.mismatches) > 0 {
+		fmt.Println(tui.HintStyle.Render("!  Found slug mismatches (separators or case). These are already in the registry:"))
+		for _, mm := range plan.mismatches {
+			fmt.Printf("   · %s (local) vs %s (registry)\n", tui.PreviewSlug.Render(mm.Local.Slug), tui.OkStyle.Render(mm.Remote))
+		}
+		fmt.Println()
 	}
 	if len(plan.missing) == 0 {
 		fmt.Println("Registry is already in sync with your dot-folders.")

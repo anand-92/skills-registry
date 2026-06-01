@@ -76,6 +76,22 @@ def slugify(name: str) -> str:
 	return _SLUG_RE.sub("_", name.strip().lower()).strip("_") or "skill"
 
 
+def normalize_for_match(name: str) -> str:
+	"""Reduce a name or slug to a comparison key.
+
+	Lowercases and strips every non-alphanumeric character, so separator- and
+	case-only variants of one skill ("simplify-swarm", "simplify_swarm",
+	"Simplify Swarm") collapse to a single key ("simplifyswarm").
+
+	Comparison counterpart to :func:`slugify`: ``slugify`` keeps word
+	separators as underscores to build a readable, filesystem-safe slug, while
+	this removes them entirely so two identifiers can be tested for "same
+	skill" regardless of which separator/case convention each used. Mirrors
+	``scan.NormalizeForMatch`` in the Go CLI; keep the two in sync.
+	"""
+	return _SLUG_RE.sub("", name.strip().lower())
+
+
 @dataclass(frozen=True)
 class SkillSummary:
 	"""One row in the registry listing returned by :func:`list_skill_folders`."""

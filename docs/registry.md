@@ -194,7 +194,7 @@ Setting `sha: null` on a tree entry is GitHub's idiomatic "delete this path" —
 The CLI's `runRemove` then layers two non-registry cleanup steps on `Delete`:
 
 1. **Cache wipe** — `~/.cache/skills-mcp/skills/<slug>/` and the sibling `<slug>.meta.json` are removed if present, so the next `get_skill` re-fetches a fresh copy if the slug is re-created under the same name.
-2. **Dot-folder sweep** — every known agent dot-folder (`~/.claude/skills`, `~/.factory/skills`, `.agents/skills`, …) is scanned for a direct child whose name (or `Slugify`'d name — the hyphen-vs-underscore case) matches the slug; matches are `os.RemoveAll`'d (unlinks symlinks, recursively removes real dirs).
+2. **Dot-folder sweep** — every known agent dot-folder (`~/.claude/skills`, `~/.factory/skills`, `.agents/skills`, …) is scanned for a direct child whose name matches the slug under `scan.NormalizeForMatch` (lowercase + strip non-alphanumerics, so separator- and case-only differences like `agp-9-upgrade` vs `agp_9_upgrade` still match); matches are `os.RemoveAll`'d (unlinks symlinks, recursively removes real dirs).
 
 One command leaves no trace of the slug across the registry + cache + every wired-up agent. JSON callers get a `{"removed_from": [...]}` array showing which locations actually had anything to delete.
 

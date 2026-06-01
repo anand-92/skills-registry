@@ -162,7 +162,8 @@ func (m SyncFlowModel) startLoad() tea.Cmd {
 		if err != nil {
 			return syncLoadedMsg{err: err}
 		}
-		return syncLoadedMsg{missing: scan.DedupeAgainst(local, remote)}
+		missing, _ := scan.DedupeAgainst(local, remote)
+		return syncLoadedMsg{missing: missing}
 	}
 }
 

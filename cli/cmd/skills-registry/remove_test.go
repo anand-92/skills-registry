@@ -399,6 +399,35 @@ func TestMatchSlugChildrenLiteralAndSlugified(t *testing.T) {
 	}
 }
 
+// TestMatchSlugChildrenNormalizesSeparatorsAndCase covers the case that
+// plain Slugify equality misses: a folder whose separators are absent or
+// differ from the canonical slug (and a mixed-case variant) must still be
+// swept. "simplifyswarm" does NOT Slugify to "simplify_swarm", so the old
+// literal-or-Slugify check left it behind; NormalizeForMatch unifies them.
+//
+// The candidate folder names are chosen so they stay distinct on
+// case-insensitive filesystems too (macOS/Windows) — "SimplifySwarm" is
+// the only separator-free variant, so it never collapses onto a
+// lowercase sibling. Passing a mixed-case slug ("Simplify_Swarm")
+// exercises the case fold on the query side as well.
+func TestMatchSlugChildrenNormalizesSeparatorsAndCase(t *testing.T) {
+	parent := t.TempDir()
+	for _, name := range []string{"simplify_swarm", "simplify-swarm", "SimplifySwarm", "unrelated"} {
+		if err := os.MkdirAll(filepath.Join(parent, name), 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", name, err)
+		}
+	}
+	got := matchSlugChildren(parent, "Simplify_Swarm")
+	if len(got) != 3 {
+		t.Fatalf("expected 3 normalized matches, got %d: %v", len(got), got)
+	}
+	for _, p := range got {
+		if strings.HasSuffix(p, "unrelated") {
+			t.Errorf("unrelated dir matched: %q", p)
+		}
+	}
+}
+
 // TestMatchSlugChildrenMissingParent covers the "parent doesn't exist"
 // short-circuit: dot-folders are usually absent on a fresh install, so
 // the helper has to tolerate missing parents without erroring out.
