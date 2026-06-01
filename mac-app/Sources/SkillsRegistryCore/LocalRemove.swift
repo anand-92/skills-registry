@@ -40,10 +40,11 @@ public enum LocalRemove {
     }
 
     /// Sweep every known agent dot-folder and remove any direct child whose
-    /// name matches the slug — literally or via `slugify` so hyphenated folder
-    /// names ("agp-9-upgrade") match canonical slugs ("agp_9_upgrade").
-    /// Returns the absolute paths actually deleted, sorted. Symlinks are
-    /// unlinked, not followed (`removeItem` removes the link itself).
+    /// name matches the slug under `normalizeForMatch` (lowercase + strip
+    /// non-alphanumerics), so separator- or case-only differences
+    /// ("agp-9-upgrade" vs "agp_9_upgrade") still match. Returns the absolute
+    /// paths actually deleted, sorted. Symlinks are unlinked, not followed
+    /// (`removeItem` removes the link itself).
     public static func removeFromDotFolders(slug: String, home: String, cwd: String) -> [String] {
         let fm = FileManager.default
         var deleted: [String] = []
@@ -59,13 +60,16 @@ public enum LocalRemove {
         return deleted
     }
 
-    /// Direct children of `parent` whose name matches `slug` literally or via
-    /// `slugify`. Empty when `parent` is absent/unreadable (normal on a fresh
+    /// Direct children of `parent` whose name matches `slug` under
+    /// `normalizeForMatch` (lowercase + strip non-alphanumerics), so a folder
+    /// differing from the canonical slug only by separators or case still
+    /// matches. Empty when `parent` is absent/unreadable (normal on a fresh
     /// install where most dot-folders don't exist).
     static func matchSlugChildren(parent: String, slug: String, fm: FileManager) -> [String] {
         guard let entries = try? fm.contentsOfDirectory(atPath: parent) else { return [] }
+        let want = normalizeForMatch(slug)
         var out: [String] = []
-        for name in entries where name == slug || slugify(name) == slug {
+        for name in entries where normalizeForMatch(name) == want {
             out.append((parent as NSString).appendingPathComponent(name))
         }
         return out

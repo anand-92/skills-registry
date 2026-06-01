@@ -72,6 +72,21 @@ final class LocalRemoveTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: "\(home!)/.cursor/skills/agp-9-upgrade"))
     }
 
+    func testRemovesSeparatorFreeAndCaseVariant() throws {
+        // "SimplifySwarm" does NOT slugify to "simplify_swarm" (slugify keeps no
+        // word boundary here), so the old literal-or-slugify check left it
+        // behind; normalizeForMatch (strip separators + case) unifies them.
+        // A separator-free name stays distinct from its hyphen/underscore
+        // siblings on case-insensitive filesystems too.
+        try seedSkill(dot: ".claude", folder: "SimplifySwarm")
+        try seedSkill(dot: ".cursor", folder: "simplify-swarm")
+        // Mixed-case slug exercises the query-side case fold as well.
+        let deleted = LocalRemove.removeFromDotFolders(slug: "Simplify_Swarm", home: home, cwd: home)
+        XCTAssertEqual(deleted.count, 2)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: "\(home!)/.claude/skills/SimplifySwarm"))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: "\(home!)/.cursor/skills/simplify-swarm"))
+    }
+
     func testSweepsMultipleAgents() throws {
         try seedSkill(dot: ".claude", folder: "demo")
         try seedSkill(dot: ".factory", folder: "demo")

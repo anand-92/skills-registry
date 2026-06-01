@@ -314,8 +314,12 @@ final class AppState: ObservableObject {
             let resolved = try await SourceResolver.resolve(source, home: home, cwd: cwd)
             addCleanup = resolved.cleanup
             let discovered = Scan.discover([Scan.Source(path: resolved.scanRoot, label: source)])
-            let existing = Set(skills.map(\.slug))
-            let fresh = discovered.filter { !existing.contains($0.slug) && $0.slug != MetaSkill.slug }
+            // Normalize both sides so a local "simplify_swarm" dedupes against a
+            // registry "simplify-swarm" (mirrors Go scan.DedupeAgainst).
+            let existing = Set(skills.map { normalizeForMatch($0.slug) })
+            let fresh = discovered.filter {
+                !existing.contains(normalizeForMatch($0.slug)) && $0.slug != MetaSkill.slug
+            }
             if discovered.isEmpty {
                 showToast("No SKILL.md files found under \(source).", .info)
             }
@@ -334,8 +338,10 @@ final class AppState: ObservableObject {
                            progress: @escaping @Sendable (Int, Int) -> Void) async {
         guard let api, let repo else { return }
         defer { addCleanup?(); addCleanup = nil }
-        let existing = Set(skills.map(\.slug))
-        let fresh = locals.filter { !existing.contains($0.slug) }
+        // Normalize both sides so separator/case-only variants dedupe against
+        // an existing registry slug (mirrors Go scan.DedupeAgainst).
+        let existing = Set(skills.map { normalizeForMatch($0.slug) })
+        let fresh = locals.filter { !existing.contains(normalizeForMatch($0.slug)) }
         let skipped = locals.count - fresh.count
         guard !fresh.isEmpty else {
             showToast(skipped > 0 ? "All selected skills already exist in the registry." : "Nothing to add.", .info)
@@ -384,7 +390,10 @@ final class AppState: ObservableObject {
         let folderName = (folder as NSString).lastPathComponent
         let (name, _) = Frontmatter.parseSummary(text, slug: folderName)
         let slug = slugify(name.isEmpty ? folderName : name)
-        guard !skills.contains(where: { $0.slug == slug }) else {
+        // Normalize both sides so a separator/case-only variant already in the
+        // registry is detected (mirrors Go scan.DedupeAgainst).
+        let want = normalizeForMatch(slug)
+        guard !skills.contains(where: { normalizeForMatch($0.slug) == want }) else {
             showToast("Skill \(slug) already exists in the registry. Remove it first to republish.", .error)
             return
         }
