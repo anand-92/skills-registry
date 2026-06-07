@@ -169,6 +169,80 @@ export default function Home() {
       </div>
     </section>
 
+    {/* ─── CLI TABLE ─── */}
+    <section id="cli">
+      <div className="container">
+        <div className="section-head">
+          <p className="eyebrow"><span className="dot"></span> CLI reference</p>
+          <h2 className="h2">The <span className="num" style={{color: "var(--accent)"}}>skills-registry</span> binary</h2>
+          <p className="lead">Charmbracelet TUI for day-to-day management. Same Git-Data-API publish flow as the MCP server, mirrored in Go.</p>
+        </div>
+
+        <figure style={{margin: "0 0 36px", borderRadius: "var(--radius-lg)", border: "1px solid var(--border)", overflow: "hidden", boxShadow: "var(--elev-ring)"}}>
+          <img src="assets/tui.png" alt="skills-registry list TUI — fuzzy-filterable skill list with a live SKILL.md preview pane" style={{display: "block", width: "100%", height: "auto"}} />
+        </figure>
+
+        <table className="cli-table">
+          <thead>
+            <tr><th>Command</th><th>What it does</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td className="cmd">skills-registry bootstrap</td>
+              <td className="desc">First-run setup. Idempotent — safe to re-run.</td>
+            </tr>
+            <tr>
+              <td className="cmd">skills-registry list</td>
+              <td className="desc">Fuzzy-filterable TUI of every skill in your registry. Press <span className="inline-code">/</span> to search, Enter to preview.</td>
+            </tr>
+            <tr>
+              <td className="cmd">skills-registry get &lt;slug&gt;</td>
+              <td className="desc">Download one skill into <span className="inline-code">./skills-registry/&lt;slug&gt;/</span>.</td>
+            </tr>
+            <tr>
+              <td className="cmd">skills-registry sync</td>
+              <td className="desc">Push local skills sitting in <span className="inline-code">.claude/skills</span>, <span className="inline-code">.cursor/skills</span>, etc. that aren't yet in the registry.</td>
+            </tr>
+            <tr>
+              <td className="cmd">skills-registry add &lt;owner/repo&gt;</td>
+              <td className="desc">Clone a teammate's registry. Multi-select which of their skills to pull into your own.</td>
+            </tr>
+            <tr>
+              <td className="cmd">skills-registry publish &lt;path&gt;</td>
+              <td className="desc">Publish a single local skill folder. Path-traversal validated. 2 MiB per-file cap.</td>
+            </tr>
+            <tr>
+              <td className="cmd">skills-registry remove &lt;slug&gt;</td>
+              <td className="desc">Atomic delete — drops the slug from the registry (single Git Data API commit with null-SHA tree entries), the local cache, and every agent dot-folder.</td>
+            </tr>
+            <tr>
+              <td className="cmd">skills-registry --version</td>
+              <td className="desc">Print version. Current: <span className="num">0.7.x</span>.</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <p className="meta-text" style={{marginTop: "20px"}}>
+          Override the registry per-process with <span className="inline-code">SKILLS_REGISTRY=owner/repo</span> — useful for browsing a teammate's read-only.
+        </p>
+      </div>
+    </section>
+
+    {/* ─── MACOS APP ─── */}
+    <section id="mac-app">
+      <div className="container">
+        <div className="section-head">
+          <p className="eyebrow"><span className="dot"></span> Native macOS app</p>
+          <h2 className="h2">Prefer a GUI? There's a native Mac app too.</h2>
+          <p className="lead">A SwiftUI app for Apple Silicon that manages the same registry without the terminal: GitHub login, browse skills with rich markdown rendering and fuzzy search, publish &amp; remove, bulk-import local skills, and a 1-click CLI install. Shares the same registry repo and config as the CLI.</p>
+        </div>
+
+        <figure style={{margin: 0, borderRadius: "var(--radius-lg)", border: "1px solid var(--border)", overflow: "hidden", boxShadow: "var(--elev-ring)"}}>
+          <img src="assets/mac-app.png" alt="Skills Registry macOS app — three-pane layout with the skill list, rendered SKILL.md, and a per-skill file browser" style={{display: "block", width: "100%", height: "auto"}} />
+        </figure>
+      </div>
+    </section>
+
     {/* ─── FEATURES ─── */}
     <section id="how-it-works">
       <div className="container">
@@ -457,61 +531,6 @@ $ skills-registry`}</code></pre>
             </p>
           </div>
         </div>
-      </div>
-    </section>
-
-    {/* ─── CLI TABLE ─── */}
-    <section id="cli">
-      <div className="container">
-        <div className="section-head">
-          <p className="eyebrow"><span className="dot"></span> CLI reference</p>
-          <h2 className="h2">The <span className="num" style={{color: "var(--accent)"}}>skills-registry</span> binary</h2>
-          <p className="lead">Charmbracelet TUI for day-to-day management. Same Git-Data-API publish flow as the MCP server, mirrored in Go.</p>
-        </div>
-
-        <table className="cli-table">
-          <thead>
-            <tr><th>Command</th><th>What it does</th></tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td className="cmd">skills-registry bootstrap</td>
-              <td className="desc">First-run setup. Idempotent — safe to re-run.</td>
-            </tr>
-            <tr>
-              <td className="cmd">skills-registry list</td>
-              <td className="desc">Fuzzy-filterable TUI of every skill in your registry. Press <span className="inline-code">/</span> to search, Enter to preview.</td>
-            </tr>
-            <tr>
-              <td className="cmd">skills-registry get &lt;slug&gt;</td>
-              <td className="desc">Download one skill into <span className="inline-code">./skills-registry/&lt;slug&gt;/</span>.</td>
-            </tr>
-            <tr>
-              <td className="cmd">skills-registry sync</td>
-              <td className="desc">Push local skills sitting in <span className="inline-code">.claude/skills</span>, <span className="inline-code">.cursor/skills</span>, etc. that aren't yet in the registry.</td>
-            </tr>
-            <tr>
-              <td className="cmd">skills-registry add &lt;owner/repo&gt;</td>
-              <td className="desc">Clone a teammate's registry. Multi-select which of their skills to pull into your own.</td>
-            </tr>
-            <tr>
-              <td className="cmd">skills-registry publish &lt;path&gt;</td>
-              <td className="desc">Publish a single local skill folder. Path-traversal validated. 2 MiB per-file cap.</td>
-            </tr>
-            <tr>
-              <td className="cmd">skills-registry remove &lt;slug&gt;</td>
-              <td className="desc">Atomic delete — drops the slug from the registry (single Git Data API commit with null-SHA tree entries), the local cache, and every agent dot-folder.</td>
-            </tr>
-            <tr>
-              <td className="cmd">skills-registry --version</td>
-              <td className="desc">Print version. Current: <span className="num">0.7.x</span>.</td>
-            </tr>
-          </tbody>
-        </table>
-
-        <p className="meta-text" style={{marginTop: "20px"}}>
-          Override the registry per-process with <span className="inline-code">SKILLS_REGISTRY=owner/repo</span> — useful for browsing a teammate's read-only.
-        </p>
       </div>
     </section>
 
