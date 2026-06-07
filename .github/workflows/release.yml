@@ -12,6 +12,7 @@ on:
       - "cli/**"
       - "install.sh"
       - "install.ps1"
+      - "npm/**"
   workflow_dispatch:
     inputs:
       bump:
@@ -259,3 +260,36 @@ jobs:
           else
             gh release create "$tag" --title "$tag" --notes "$notes" artifacts/*
           fi
+
+  publish-npm:
+    name: Publish npm wrapper
+    # Runs after the release exists so the per-platform tarballs the wrapper
+    # downloads (on postinstall / first run) are already attached. No-op when
+    # the NPM_TOKEN secret is absent, so forks and token-less repos stay green.
+    needs: [tag, release]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # npm provenance
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.tag.outputs.tag }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
+      - name: Publish skills-registry@${{ needs.tag.outputs.version }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          PKG_VERSION: ${{ needs.tag.outputs.version }}
+        working-directory: npm
+        run: |
+          set -euo pipefail
+          if [ -z "${NODE_AUTH_TOKEN:-}" ]; then
+            echo "NPM_TOKEN not set — skipping npm publish."
+            exit 0
+          fi
+          # Stamp the release version into package.json (kept at 0.0.0 in git).
+          npm version "$PKG_VERSION" --no-git-tag-version --allow-same-version
+          npm publish --provenance --access public

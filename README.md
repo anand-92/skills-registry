@@ -70,6 +70,15 @@ powershell -c "& ([scriptblock]::Create((irm https://raw.githubusercontent.com/a
 skills-registry
 ```
 
+**npm / npx** (any platform)
+
+```bash
+npx skills-registry          # one-off, no install
+npm install -g skills-registry   # or install globally
+```
+
+The npm package is a thin launcher that downloads the same prebuilt binary from GitHub Releases on install (or first run); the macOS builds are codesigned + notarized.
+
 The installer drops the `skills-registry` Go binary into `~/.local/bin/`. Bare `skills-registry` routes automatically:
 
 - **First-time users** → **onboarding wizard** (alt-screen TUI): scan dot-folders → pick repo name/visibility → push every skill with one `git push` → pick agents to wire up → optionally delete the now-redundant local copies → print the hosted-MCP JSON snippet.
@@ -247,6 +256,7 @@ Found a bug? Have an idea? [Open an issue](https://github.com/anand-92/skills-re
 - [`cli/`](cli) — the Go binary users install (TUI + headless subcommands).
 - [`mac-app/`](mac-app) — native macOS app (SwiftUI, Apple Silicon) for managing the registry: GitHub login, browse with rich markdown + fuzzy search, publish/remove, bulk-import local skills, and 1-click CLI install. See its [README](mac-app/README.md).
 - [`install.sh`](install.sh) — POSIX one-shot installer for the Go binary.
+- [`npm/`](npm) — thin npm wrapper (`npx skills-registry`) that downloads the matching release binary.
 - [`docs/`](docs) — architecture deep-dive (`registry.md`) and supporting docs.
 - [`infa-not-for-users/`](infa-not-for-users) — the hosted MCP server (Python + FastMCP), Dockerfile, and Railway config. **Maintainer-only**; see its README for deployment details.
 - [`website/`](website) — Next.js landing page (`skills-registry.dev`).

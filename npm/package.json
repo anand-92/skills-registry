@@ -1,0 +1,47 @@
+{
+  "name": "skills-registry",
+  "version": "0.0.0",
+  "description": "Skills Registry CLI — Charmbracelet TUI + headless commands for managing an agent-skills registry. This npm package is a thin launcher that downloads the matching prebuilt Go binary from GitHub Releases.",
+  "keywords": [
+    "skills",
+    "registry",
+    "mcp",
+    "cli",
+    "agents",
+    "ai"
+  ],
+  "homepage": "https://skills-registry.dev",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/anand-92/skills-registry.git",
+    "directory": "npm"
+  },
+  "bugs": {
+    "url": "https://github.com/anand-92/skills-registry/issues"
+  },
+  "license": "Apache-2.0",
+  "bin": {
+    "skills-registry": "run.js"
+  },
+  "scripts": {
+    "postinstall": "node install.js"
+  },
+  "files": [
+    "run.js",
+    "install.js",
+    "lib/binary.js",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=16"
+  },
+  "os": [
+    "darwin",
+    "linux",
+    "win32"
+  ],
+  "cpu": [
+    "x64",
+    "arm64"
+  ]
+}

@@ -18,6 +18,7 @@
   - **CLI reads (Go):** `list`, `get`, `sync` and the hub read from a **local shallow-clone mirror** at `~/.cache/skills-mcp/mirror/<owner>/<repo>/` (see `cli/internal/registry/mirror.go`). Created with `git clone --depth=1`, fast-forwarded with `git fetch --depth=1` + `git reset --hard FETCH_HEAD`. The previous `1 + N` sequential `gh api` walk dropped from ~25 s to ~0.8 s warm on a 91-skill registry. `SKILLS_MIRROR_DISABLE=1` (or no `git` on PATH) forces the original gh-api path.
   - **CLI writes (Go):** single-skill `publish` and `remove` go through `gh api` — 1–10 files, well under the rate limit, and the atomic Git Data API path keeps strict-ordering / null-SHA semantics intact.
   - **Installer (`install.sh`):** the only one-shot `curl … | sh` surface. POSIX `sh`, detects OS/arch, downloads the matching tarball, drops the binary into `~/.local/bin/skills-registry`. Never touches Python.
+  - **npm wrapper (`npm/`):** a thin Node launcher published as `skills-registry` (`npx skills-registry`). Ships no binary of its own — its `postinstall` (with a lazy first-run fallback in `run.js` to survive `--ignore-scripts`) detects `process.platform`/`process.arch`, downloads the matching GitHub Release tarball/zip, extracts the single binary via the host's `tar`/`Expand-Archive`, and execs it with inherited stdio. Package version maps 1:1 to the release tag. Never touches Python; never bundles or commits the binary.
 
 ---
 
@@ -26,6 +27,13 @@
 ```text
 install.sh               # POSIX `curl | sh` installer — the user-facing entry point.
                          # Downloads the matching skills-registry tarball from GitHub Releases.
+
+npm/                     # Thin npm wrapper published as `skills-registry` (`npx skills-registry`).
+                         # postinstall/run.js download + exec the matching release binary; ships no binary.
+  package.json           # bin → run.js; postinstall → install.js; version stamped to the release tag in CI
+  lib/binary.js          # platform→asset mapping, download/extract helpers (no runtime deps)
+  install.js             # postinstall hook (non-fatal; defers to first-run fallback)
+  run.js                 # bin launcher: ensure binary present, exec with inherited stdio + exit-code passthrough
 
 infa-not-for-users/      # Maintainer-only. Hosted MCP server source + Docker/Railway config.
   skills_mcp/            # Python package (no `src/` layout — packages = ["skills_mcp"] in pyproject.toml)
@@ -66,7 +74,7 @@ docs/
   registry.md            # Architecture deep dive (refreshed for the hosted-MCP topology)
 .github/workflows/
   ci.yml                 # Two parallel jobs: `server` (ruff + pytest in infa-not-for-users/) and `cli` (vet/staticcheck/deadcode/gocyclo/build/test)
-  release.yml            # CLI-only path filter (cli/**, install.sh). Builds Go binaries for 5 targets; no PyPI publish, no wheel build.
+  release.yml            # CLI path filter (cli/**, install.sh, install.ps1, npm/**). Builds Go binaries for 6 targets; publishes the npm wrapper (gated on NPM_TOKEN); no PyPI publish, no wheel build.
 website/                 # Next.js landing page (skills-registry.dev). Static; deployed separately.
 ```
 
