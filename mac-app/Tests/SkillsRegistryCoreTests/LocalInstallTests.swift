@@ -27,7 +27,9 @@ final class LocalInstallTests: XCTestCase {
                                                targets: targets, home: home, cwd: home)
         XCTAssertEqual(written.count, 2)
         for t in targets {
-            let base = "\(home!)/\(t.dotDir)/skills/git_helper"
+            // Install folder uses the hyphen form so the basename matches the
+            // frontmatter `name` skill loaders key on.
+            let base = "\(home!)/\(t.dotDir)/skills/git-helper"
             XCTAssertEqual(try String(contentsOfFile: "\(base)/SKILL.md", encoding: .utf8), "# hi")
             XCTAssertTrue(FileManager.default.fileExists(atPath: "\(base)/scripts/run.sh"))
         }
@@ -46,7 +48,16 @@ final class LocalInstallTests: XCTestCase {
     func testSlugIsCanonicalized() throws {
         let written = try LocalInstall.install(slug: "Git Helper", files: ["SKILL.md": Data("x".utf8)],
                                                targets: [target(".claude")], home: home, cwd: home)
-        XCTAssertEqual((written[0] as NSString).lastPathComponent, "git_helper")
+        XCTAssertEqual((written[0] as NSString).lastPathComponent, "git-helper")
+    }
+
+    // A hyphenated registry slug must install into a folder whose basename is
+    // byte-identical to the frontmatter `name` — the regression that left
+    // keep-agent-mem unloadable when it was written as keep_agent_mem.
+    func testHyphenatedSlugInstallsHyphenatedFolder() throws {
+        let written = try LocalInstall.install(slug: "keep_agent_mem", files: ["SKILL.md": Data("x".utf8)],
+                                               targets: [target(".factory")], home: home, cwd: home)
+        XCTAssertEqual((written[0] as NSString).lastPathComponent, "keep-agent-mem")
     }
 
     func testNoTargetsThrows() {

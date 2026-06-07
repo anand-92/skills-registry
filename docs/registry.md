@@ -246,6 +246,12 @@ Keyed on **tree SHA** (not ETag or `Last-Modified`), so a force-push or any subt
 
 The hosted MCP does not cache between requests — every `get_skill` reads through to GitHub. A short-TTL server-side cache keyed on tree SHA is a future optimization; not required for current volume.
 
+### Two slug renderings: `Slugify` (registry) vs `FolderName` (install)
+
+The registry's internal identifier is the **underscore slug** from `scan.Slugify` (Go) / `slugify` (Python/Swift): lowercase, every non-`[a-z0-9]` run → `_`. That's what names the `<slug>/` folder in the repo, the `gh api` write paths, and the `~/.cache/skills-mcp/skills/<slug>/` cache.
+
+But a **durable local install** (`list` / Manage / Add → `cli/cmd/skills-registry/install_local.go`, Swift `LocalInstall`) writes into `<dot>/skills/<folder>/`, and agent skill loaders (Claude Code, Factory, …) require that folder's basename to equal the skill's frontmatter `name` — conventionally lowercase-**hyphenated** (e.g. `keep-agent-mem`). So the install folder uses `scan.FolderName` (Go) / `folderName` (Swift): identical to `Slugify` except separators become `-`. A skill named `keep-agent-mem` therefore stores as `keep_agent_mem` in the registry but installs as `keep-agent-mem/` on disk; `FolderName(Slugify(name)) == FolderName(name)` so the fetch (underscore) and the install basename (hyphen) stay consistent. The cleanup/purge sweep keys on `NormalizeForMatch`, which treats `-` and `_` as equal, so it still matches either form.
+
 ---
 
 ## 4.1 Analytics (PostHog)

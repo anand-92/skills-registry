@@ -32,6 +32,32 @@ func TestSlugify(t *testing.T) {
 	}
 }
 
+func TestFolderName(t *testing.T) {
+	cases := map[string]string{
+		"Code Review":         "code-review",
+		"  Trim Whitespace  ": "trim-whitespace",
+		"!!!":                 "skill",
+		"hello-world":         "hello-world",
+		"keep-agent-mem":      "keep-agent-mem",
+		"keep_agent_mem":      "keep-agent-mem",
+	}
+	for in, want := range cases {
+		if got := FolderName(in); got != want {
+			t.Errorf("FolderName(%q) = %q, want %q", in, got, want)
+		}
+	}
+	// FolderName must be stable whether it's handed the raw name or the
+	// underscore slug Slugify produced — install_local.go relies on this so
+	// the dot-folder basename matches the frontmatter `name` regardless of
+	// which identifier the caller passes.
+	for _, name := range []string{"keep-agent-mem", "Code Review", "AGP-9 Upgrade"} {
+		if FolderName(name) != FolderName(Slugify(name)) {
+			t.Errorf("FolderName(%q)=%q != FolderName(Slugify(%q))=%q",
+				name, FolderName(name), name, FolderName(Slugify(name)))
+		}
+	}
+}
+
 func TestNormalizeForMatch(t *testing.T) {
 	cases := map[string]string{
 		// Separator and case variants of one skill all collapse to one key.

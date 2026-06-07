@@ -12,6 +12,19 @@ final class SlugTests: XCTestCase {
         XCTAssertEqual(slugify("a.b.c"), "a_b_c")
     }
 
+    func testFolderName() {
+        XCTAssertEqual(folderName("Git Helper"), "git-helper")
+        XCTAssertEqual(folderName("keep-agent-mem"), "keep-agent-mem")
+        XCTAssertEqual(folderName("keep_agent_mem"), "keep-agent-mem")
+        XCTAssertEqual(folderName("agp-9-upgrade"), "agp-9-upgrade")
+        XCTAssertEqual(folderName("***"), "skill")
+        XCTAssertEqual(folderName(""), "skill")
+        // Stable whether handed the raw name or its underscore slug.
+        for name in ["keep-agent-mem", "Git Helper", "AGP-9 Upgrade"] {
+            XCTAssertEqual(folderName(name), folderName(slugify(name)))
+        }
+    }
+
     func testNormalizeForMatch() {
         XCTAssertEqual(normalizeForMatch("simplify-swarm"), "simplifyswarm")
         XCTAssertEqual(normalizeForMatch("simplify_swarm"), "simplifyswarm")

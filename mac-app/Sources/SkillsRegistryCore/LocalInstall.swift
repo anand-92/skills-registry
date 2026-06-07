@@ -36,7 +36,10 @@ public enum LocalInstall {
     public static func install(slug: String, files: [String: Data],
                                targets: [AgentTarget], home: String, cwd: String) throws -> [String] {
         guard !targets.isEmpty else { throw InstallError.noTargets }
-        let canon = slugify(slug)
+        // Skill loaders require the installed folder's basename to equal the
+        // frontmatter `name` — conventionally lowercase-hyphenated — so the
+        // dot-folder destination uses the hyphen form, not the underscore slug.
+        let folder = folderName(slug)
 
         // Validate every relative path up front so a bad entry fails before we
         // write anything anywhere.
@@ -48,7 +51,7 @@ public enum LocalInstall {
         let fm = FileManager.default
         var written: [String] = []
         for t in targets {
-            let dest = (t.skillsDir(home: home, cwd: cwd) as NSString).appendingPathComponent(canon)
+            let dest = (t.skillsDir(home: home, cwd: cwd) as NSString).appendingPathComponent(folder)
             try writeTree(into: dest, files: normalized, fm: fm)
             written.append(dest)
         }

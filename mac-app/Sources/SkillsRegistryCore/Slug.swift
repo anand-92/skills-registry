@@ -26,6 +26,36 @@ public func slugify(_ name: String) -> String {
     return out
 }
 
+/// Render a skill identifier as the on-disk folder name for a durable local
+/// install. Identical to `slugify` except word separators become hyphens
+/// instead of underscores, because skill loaders (Claude Code, Factory, …)
+/// require the install folder's basename to equal the skill's frontmatter
+/// `name`, which is conventionally lowercase-hyphenated (e.g. "keep-agent-mem").
+///
+/// `slugify` still owns the registry's internal slug and every write path; only
+/// the durable local install uses this hyphen form. Mirrors `scan.FolderName`
+/// in the Go CLI; keep the two in sync. `folderName(slugify(name)) ==
+/// folderName(name)` for all inputs.
+public func folderName(_ name: String) -> String {
+    let lowered = name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    var out = ""
+    out.reserveCapacity(lowered.count)
+    var pendingHyphen = false
+    for ch in lowered.unicodeScalars {
+        if (ch >= "a" && ch <= "z") || (ch >= "0" && ch <= "9") {
+            if pendingHyphen && !out.isEmpty {
+                out.append("-")
+            }
+            pendingHyphen = false
+            out.unicodeScalars.append(ch)
+        } else {
+            pendingHyphen = true
+        }
+    }
+    if out.isEmpty { return "skill" }
+    return out
+}
+
 /// Reduce a name or slug to a comparison key.
 ///
 /// Lowercases and strips every non-alphanumeric character, so separator- and

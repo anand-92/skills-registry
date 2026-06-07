@@ -70,6 +70,12 @@ func installSkillIntoTargets(ctx context.Context, client *registry.Client, slug 
 		return nil, errors.New("install requires at least one target")
 	}
 	canon := scan.Slugify(slug)
+	// The registry stores and serves the skill under its underscore slug
+	// (canon), but skill loaders require the installed folder's basename to
+	// equal the frontmatter `name` — conventionally lowercase-hyphenated. Use
+	// the hyphen form for the dot-folder destination only; the fetch below
+	// still uses canon.
+	folderName := scan.FolderName(slug)
 
 	scratch, err := os.MkdirTemp("", "skills-registry-install-")
 	if err != nil {
@@ -99,7 +105,7 @@ func installSkillIntoTargets(ctx context.Context, client *registry.Client, slug 
 
 	written := make([]string, 0, len(targets))
 	for _, t := range targets {
-		dest := filepath.Join(t.SkillsDir(home, cwd), canon)
+		dest := filepath.Join(t.SkillsDir(home, cwd), folderName)
 		if err := os.MkdirAll(dest, 0o755); err != nil {
 			return nil, fmt.Errorf("create %s: %w", dest, err)
 		}

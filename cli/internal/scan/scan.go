@@ -62,6 +62,25 @@ func Slugify(name string) string {
 	return s
 }
 
+// FolderName renders a skill identifier as the on-disk folder name used when
+// installing into an agent dot-folder. It is identical to Slugify except word
+// separators become hyphens instead of underscores, because skill loaders
+// (Claude Code, Factory, …) require the install folder's basename to equal the
+// skill's frontmatter `name`, which is conventionally lowercase-hyphenated
+// (e.g. "keep-agent-mem"). Slugify still owns the registry's internal slug and
+// every gh-api path; only the durable local install uses this hyphen form.
+//
+// FolderName(Slugify(name)) == FolderName(name) for all inputs, so callers can
+// pass either the raw name or its slug.
+func FolderName(name string) string {
+	s := slugRe.ReplaceAllString(strings.ToLower(strings.TrimSpace(name)), "-")
+	s = strings.Trim(s, "-")
+	if s == "" {
+		return "skill"
+	}
+	return s
+}
+
 // NormalizeForMatch reduces a name or slug to a comparison key by
 // lowercasing and stripping every non-alphanumeric character. Unlike
 // Slugify — which preserves word separators as underscores so the result
