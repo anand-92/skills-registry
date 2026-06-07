@@ -63,6 +63,8 @@ The installer drops the `skills-registry` Go binary into `~/.local/bin/`. Bare `
 - **Returning users** → **dashboard hub** with cards for Manage / Sync / Add / Publish / Purge / Settings.
 - **Piped / `--json` invocations** → usage text instead of a TUI (safe to drop into scripts).
 
+<img src="docs/img/wizard.gif" alt="skills-registry onboarding wizard — scan local skills, name the registry repo, choose visibility, all in an alt-screen TUI." width="100%">
+
 That's it — your agents are wired up. Each one now carries the gateway skill (`skills-registry/SKILL.md`), so you can just ask:
 
 > *"What skills do I have available?"*
@@ -84,7 +86,7 @@ Prefer a GUI? There's a native macOS app (SwiftUI, Apple Silicon) for managing y
 
 ## Daily use
 
-<img src="docs/img/tui.png" alt="skills-registry list TUI — fuzzy-filterable skill list on the left with a live SKILL.md preview pane on the right." width="100%">
+<img src="docs/img/hub.gif" alt="skills-registry dashboard hub — card grid for Manage / Sync / Add / Publish / Purge / Settings, opening into the searchable skill list." width="100%">
 
 Run `skills-registry` for the dashboard, or use subcommands directly:
 
@@ -102,6 +104,8 @@ Run `skills-registry` for the dashboard, or use subcommands directly:
 | Re-run the wizard / bootstrap (idempotent) | `skills-registry bootstrap` |
 
 Most users only touch `list`, `get`, and `publish`. The TUI is fuzzy-filterable; press `/` to search, Enter on a row to pick which agent dot-folders should receive a durable install — `.agents/skills` is always-on; popular agents are pre-checked. `get` stays the cache-only fetch for one-shot agent reads.
+
+<img src="docs/img/demo.gif" alt="skills-registry list TUI — fuzzy-filterable skill list on the left with a live SKILL.md preview pane on the right, filtering as you type." width="100%">
 
 ### `remove`: delete a skill end-to-end
 

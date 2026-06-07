@@ -178,8 +178,19 @@ export default function Home() {
           <p className="lead">Charmbracelet TUI for day-to-day management. Same Git-Data-API publish flow as the MCP server, mirrored in Go.</p>
         </div>
 
+        <figure style={{margin: "0 0 16px", borderRadius: "var(--radius-lg)", border: "1px solid var(--border)", overflow: "hidden", boxShadow: "var(--elev-ring)"}}>
+          <img src="assets/wizard.gif" alt="skills-registry onboarding wizard — scan local skills, name the registry repo, choose visibility, all in an alt-screen TUI" style={{display: "block", width: "100%", height: "auto"}} />
+          <figcaption className="meta-text" style={{padding: "10px 14px", borderTop: "1px solid var(--border)"}}>First run · the onboarding wizard scans your skills, names the repo, and pushes everything in one shot.</figcaption>
+        </figure>
+
+        <figure style={{margin: "0 0 16px", borderRadius: "var(--radius-lg)", border: "1px solid var(--border)", overflow: "hidden", boxShadow: "var(--elev-ring)"}}>
+          <img src="assets/hub.gif" alt="skills-registry dashboard hub — card grid for Manage / Sync / Add / Publish / Purge / Settings, opening into the searchable skill list" style={{display: "block", width: "100%", height: "auto"}} />
+          <figcaption className="meta-text" style={{padding: "10px 14px", borderTop: "1px solid var(--border)"}}>Every run after · the dashboard hub — Manage, Sync, Add, Publish, Purge, Settings.</figcaption>
+        </figure>
+
         <figure style={{margin: "0 0 36px", borderRadius: "var(--radius-lg)", border: "1px solid var(--border)", overflow: "hidden", boxShadow: "var(--elev-ring)"}}>
-          <img src="assets/tui.png" alt="skills-registry list TUI — fuzzy-filterable skill list with a live SKILL.md preview pane" style={{display: "block", width: "100%", height: "auto"}} />
+          <img src="assets/demo.gif" alt="skills-registry list TUI — fuzzy-filterable skill list with a live SKILL.md preview pane, filtering as you type" style={{display: "block", width: "100%", height: "auto"}} />
+          <figcaption className="meta-text" style={{padding: "10px 14px", borderTop: "1px solid var(--border)"}}>Browse + fuzzy-filter your whole registry with a live SKILL.md preview.</figcaption>
         </figure>
 
         <table className="cli-table">
