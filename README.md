@@ -109,14 +109,14 @@ Most users only touch `list`, `get`, and `publish`. The TUI is fuzzy-filterable;
 
 ### Import a public skill repo
 
-`add` scans every nested `SKILL.md` in the source repo before publishing selected skills into your own registry. For example, a user can import TweetClaw's OpenClaw and Xquik skill without copying files by hand:
+`add` scans every nested `SKILL.md` in the source repo before publishing selected skills into your own registry. For example, a user can import the TweetClaw skill for OpenClaw and Xquik without copying files by hand:
 
 ```bash
 skills-registry add Xquik-dev/tweetclaw
 skills-registry get tweetclaw
 ```
 
-That keeps the public source repo as the import target while the user's registry owns the stored copy, version history, and local agent install. TweetClaw's skill covers X/Twitter jobs such as scrape tweets, search tweets and replies, follower export, user lookup, media workflows, monitor tweets, webhooks, giveaway draws, and approval-gated posting.
+That keeps the public source repo as the import target while the user's registry owns the stored copy, version history, and local agent install. TweetClaw covers X/Twitter jobs such as tweet scraping, tweet and reply search, follower export, user lookup, media workflows, tweet monitoring, webhooks, giveaway draws, and approval-gated posting.
 
 ### `remove`: delete a skill end-to-end
 
